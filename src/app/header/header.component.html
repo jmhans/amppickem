@@ -1,0 +1,38 @@
+<!-- src/app/header/header.component.html -->
+<header id="header" class="header">
+  <div class="header-page bg-primary">
+    <a class="toggle-offcanvas bg-primary" (click)="toggleNav()"><span></span></a>
+    <h1 class="header-page-siteTitle">
+      <a routerLink="/">ABL</a>
+    </h1>
+
+    <!-- <div class="header-page-authStatus">
+      <span *ngIf="auth.loggingIn">Logging in...</span>
+      <ng-template [ngIf]="!auth.loggingIn">
+        <a *ngIf="!auth.loggedIn" (click)="auth.login()">Log In</a>
+        <span *ngIf="auth.loggedIn && auth.userProfile">
+          {{ auth.userProfile.name }}
+          <span class="divider">|</span>
+          <a (click)="auth.logout()">Log Out</a>
+        </span>
+      </ng-template>
+    </div> -->
+
+  </div>
+
+
+  <nav id="nav" class="nav" role="navigation">
+    <ul class="nav-list">
+      <li><a routerLink="/dashboard">Dashboard</a></li>
+      <!-- <li>
+        <a
+          *ngIf="auth.loggedIn"
+          routerLink="/players"
+          routerLinkActive="active">Players</a>
+      </li> -->
+      <li>
+        <app-auth-button></app-auth-button>
+      </li>
+    </ul>
+  </nav>
+</header>

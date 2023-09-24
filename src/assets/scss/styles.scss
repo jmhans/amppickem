@@ -1,0 +1,15 @@
+/* src/assets/scss/styles.scss */
+// partials
+@import 'partials/layout.vars';
+@import 'partials/responsive.partial';
+
+// global styles
+@import 'base';
+
+@import './../../../node_modules/bootstrap/scss/bootstrap-reboot';
+@import './../../../node_modules/bootstrap/scss/bootstrap-grid';
+@import '@angular/material/prebuilt-themes/deeppurple-amber.css';
+@import url("https://fonts.googleapis.com/icon?family=Material+Icons+Outlined");
+
+html, body { height: 100%; }
+body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
