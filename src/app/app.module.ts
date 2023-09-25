@@ -8,6 +8,8 @@ import { FooterComponent } from './footer/footer.component';
 
 import { AuthModule } from '@auth0/auth0-angular';
 import { AuthButtonComponent } from './auth/auth-button/auth-button.component';
+import { UserProfileComponent } from './auth/user-profile/user-profile.component';
+import { HomeComponent } from './pages/home/home.component';
 
 
 @NgModule({
@@ -15,7 +17,9 @@ import { AuthButtonComponent } from './auth/auth-button/auth-button.component';
     AppComponent,
     HeaderComponent,
     FooterComponent,
-    AuthButtonComponent
+    AuthButtonComponent,
+    UserProfileComponent,
+    HomeComponent
   ],
   imports: [
     BrowserModule,
