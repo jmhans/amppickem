@@ -16,16 +16,22 @@ export class AppComponent {
   constructor() {}
 
   ngOnInit() {
+    fromEvent(window, 'resize')
+      .pipe(
+        debounceTime(200)
+      )
+      .subscribe((event: any) => this._resizeFn(event));
 
+    this._initWinHeight = window.innerHeight;
+    this._resizeFn(null);
   }
-
   navToggledHandler(e: boolean) {
     this.navOpen = e;
   }
 
-/*   private _resizeFn(e) {
+   private _resizeFn(e: { target: { innerHeight: number; }; } | null) {
     const winHeight: number = e ? e.target.innerHeight : this._initWinHeight;
     this.minHeight = `${winHeight}px`;
-  } */
+  }
 
 }
