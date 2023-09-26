@@ -17,7 +17,7 @@
         "build": {
           "builder": "@angular-devkit/build-angular:browser",
           "options": {
-            "outputPath": "dist/amppickem",
+            "outputPath": "dist",
             "index": "src/index.html",
             "main": "src/main.ts",
             "polyfills": [
@@ -33,6 +33,7 @@
               "src/styles.scss"
             ],
             "scripts": []
+
           },
           "configurations": {
             "production": {
@@ -53,10 +54,11 @@
             "development": {
               "buildOptimizer": false,
               "optimization": false,
-              "vendorChunk": true,
+              "vendorChunk": false,
               "extractLicenses": false,
               "sourceMap": true,
-              "namedChunks": true
+              "namedChunks": false,
+              "aot": false
             }
           },
           "defaultConfiguration": "production"
@@ -93,7 +95,7 @@
               "src/assets"
             ],
             "styles": [
-              "src/styles.scss"
+              "src/assets/scss/styles.scss"
             ],
             "scripts": []
           }

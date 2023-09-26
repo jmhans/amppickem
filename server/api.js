@@ -56,7 +56,7 @@ module.exports = function(app) {
 
 
   var api = require('../routes/api.route');
-  app.use('/api2', api);
+  app.use('/api', api);
 
 };
 

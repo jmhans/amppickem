@@ -10,6 +10,9 @@ import { AuthModule } from '@auth0/auth0-angular';
 import { AuthButtonComponent } from './auth/auth-button/auth-button.component';
 import { UserProfileComponent } from './auth/user-profile/user-profile.component';
 import { HomeComponent } from './pages/home/home.component';
+import { NflScoresComponent } from './pages/nfl-scores/nfl-scores.component';
+
+import { HttpClientModule }    from '@angular/common/http';
 
 
 @NgModule({
@@ -19,11 +22,13 @@ import { HomeComponent } from './pages/home/home.component';
     FooterComponent,
     AuthButtonComponent,
     UserProfileComponent,
-    HomeComponent
+    HomeComponent,
+    NflScoresComponent
   ],
   imports: [
     BrowserModule,
     AppRoutingModule,
+    HttpClientModule,
     AuthModule.forRoot({
       domain: 'actuarialgames.auth0.com',
       clientId: 'EHKa7RHnXAJgasX4KcBjKl3y1IceDa2H',

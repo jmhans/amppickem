@@ -9,9 +9,9 @@ router.use(function timeLog(req, res, next) {
   next();
 });
 
-//var PlayersController = require('../controllers/players.controller');
+var NFLController = require('../controllers/nfl.controller');
 
 
-//router.use(new PlayersController().reroute());
+router.use(new NFLController().route());
 
 module.exports = router;

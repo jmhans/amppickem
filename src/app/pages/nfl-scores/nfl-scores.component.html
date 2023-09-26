@@ -1,0 +1,11 @@
+ <div *ngFor="let game of score_obs$ | async">
+
+  <div *ngFor="let match of game.competitions">
+    <div *ngFor="let tm of match.competitors">
+      {{tm?.team.displayName}} | {{tm?.score}}
+    </div>
+  </div>
+
+
+</div>
+

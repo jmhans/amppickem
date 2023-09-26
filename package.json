@@ -4,7 +4,7 @@
   "scripts": {
     "ng": "ng",
     "start": "node server.js",
-    "build": "ng build --output-path dist --source-map=false",
+    "build": "ng build --output-path dist --source-map=true",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
   },
@@ -19,6 +19,7 @@
     "@angular/platform-browser-dynamic": "^16.1.0",
     "@angular/router": "^16.1.0",
     "@auth0/auth0-angular": "^2.2.1",
+    "axios": "^1.5.0",
     "dotenv": "^16.3.1",
     "express-jwt": "^8.4.1",
     "jwks-rsa": "^3.0.1",
