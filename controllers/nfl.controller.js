@@ -7,6 +7,8 @@ const axios = require('axios');
 
 var express = require('express');
 var router = express.Router();
+const NFLGame = require('./../models/game');
+
 
   const ABBREV_MAP = {
     "GREEN BAY PACKERS": "GB",
@@ -116,9 +118,58 @@ class NFLController {
   }
 
 
+  async _saveNFLGameToDB(nflGame) {
+
+    const query = {'nflGameId': nflGame.id}
+    try {
+      let loadedGame = await NFLGame.findOneAndUpdate(query,  nflGame, {upsert: true, new: true})
+      return loadedGame
+    }
+    catch (err) {
+      console.log(`Error in _saveNFLGameToDB: ${err}`)
+    }
+  }
+  async _saveGames(req, res, next) {
+    try {
+
+        //this.WEEK = req.params.weekId ? req.params.weekId : this.WEEK;
+        const sb = await this.getFullScoreboard(req.params.weekId);
+
+        let translated = sb.events.map((espn_event)=> {
+          let homeTeam =espn_event.competitions[0].competitors.find((c)=> {return c.homeAway== 'home'})
+          let awayTeam =espn_event.competitions[0].competitors.find((c)=> {return c.homeAway== 'away'})
+          return {
+            nflGameId: espn_event.id,
+            gameTime: espn_event.date,
+            status: espn_event.status.type.description,
+            homeTeam: homeTeam.team.abbreviation,
+            awayTeam: awayTeam.team.abbreviation,
+            score: {"home": parseInt(homeTeam.score), "away": parseInt(awayTeam.score), "total": parseInt(homeTeam.score)+parseInt(awayTeam.score)}
+          }
+        })
+
+
+        for (let ev=0; ev<translated.length; ev++) {
+            await this._saveNFLGameToDB(translated[ev])
+        }
+
+
+        return res.send(translated);
+
+    } catch (err) {
+      console.error(`Error in _saveGames(): ${err}`);
+      return res.status(500).send({message: err.message});
+
+    }
+  }
+
+
+
   route() {
     router.get('/nfl/scoreboard', (...args) => this._getScoreboard(...args))
     router.get('/nfl/scoreboard/:weekId', (...args)=> this._getScoreboard(...args))
+    router.get('/nfl/scores/save', (...args) => this._saveGames(...args))
+    router.get('/nfl/scores/save/:weekId', (...args) => this._saveGames(...args))
     return router;
   }
 }
