@@ -9,9 +9,10 @@ class BaseController {
 
   //Simple version, without validation or sanitation
 _get(req, res, next) {
-  this.model.find(function(err, results) {
-    if (err) return next(err);
+  this.model.find().then(function(results) {
     res.json(results);
+  }).catch(function(err) {
+    return next(err)
   });
   }
 
