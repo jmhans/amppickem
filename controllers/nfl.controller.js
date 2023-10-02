@@ -8,6 +8,7 @@ const axios = require('axios');
 var express = require('express');
 var router = express.Router();
 const NFLGame = require('./../models/game');
+const Line = require('./../models/line');
 
 
   const ABBREV_MAP = {
@@ -120,9 +121,10 @@ class NFLController {
 
   async _saveNFLGameToDB(nflGame) {
 
-    const query = {'nflGameId': nflGame.id}
+    const query = {'nflGameId': nflGame.nflGameId}
     try {
       let loadedGame = await NFLGame.findOneAndUpdate(query,  nflGame, {upsert: true, new: true})
+
       return loadedGame
     }
     catch (err) {
@@ -144,7 +146,9 @@ class NFLController {
             status: espn_event.status.type.description,
             homeTeam: homeTeam.team.abbreviation,
             awayTeam: awayTeam.team.abbreviation,
-            score: {"home": parseInt(homeTeam.score), "away": parseInt(awayTeam.score), "total": parseInt(homeTeam.score)+parseInt(awayTeam.score)}
+            score: {"home": parseInt(homeTeam.score), "away": parseInt(awayTeam.score), "total": parseInt(homeTeam.score)+parseInt(awayTeam.score)},
+            season: espn_event.season.year,
+            week: espn_event.week.number
           }
         })
 
@@ -162,6 +166,8 @@ class NFLController {
 
     }
   }
+
+
 
 
 

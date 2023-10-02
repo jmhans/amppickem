@@ -1,0 +1,46 @@
+
+<div *ngIf="picks$ | async as games"  class="container">
+  <div class="row header-row">
+    <div class="col-3">
+      <span>Away Team</span>
+      <span></span>
+      <span>Home Team</span>
+    </div>
+    <div class="col-3">
+      <span>Spread</span>
+      <span>O/U</span>
+    </div>
+    <div class="col-6">
+      <span>Actions</span>
+    </div>
+
+
+</div>
+
+
+
+      <div *ngFor="let gm of games" class="row game-row">
+        <div class="col-3">
+          <span>{{gm.awayTeam}}</span>
+          <span>@</span>
+          <span>{{gm.homeTeam}}</span>
+        </div>
+        <div class="col-3">
+          <span>-1.5</span>
+          <span>46</span>
+        </div>
+        <div class="col-6">
+          <span>pick away thing</span>
+          <span>pick home thing</span>
+          <span>pick under</span>
+          <span>pick over</span>
+        </div>
+
+
+    </div>
+
+
+</div>
+
+
+

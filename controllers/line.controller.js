@@ -5,16 +5,16 @@ var express = require('express');
 var router = express.Router();
 
 
-const Game = require('../models/game');
+const Line = require('../models/line');
 const ObjectId = require('mongoose').Types.ObjectId;
 
-class GameController extends BaseController{
+class LineController extends BaseController{
 
   constructor() {
-    super(Game, 'nflgames');
+    super(Line, 'lines');
 
   }
 
 }
 
-module.exports = GameController
+module.exports = LineController
