@@ -5,7 +5,7 @@ var express = require('express');
 var router = express.Router();
 
 
-const Line = require('../models/line');
+const Line = require('../models/line').model;
 const ObjectId = require('mongoose').Types.ObjectId;
 
 class LineController extends BaseController{

@@ -1,5 +1,5 @@
 
-<div *ngIf="picks$ | async as games"  class="container">
+<div *ngIf="picks$ | async as games"  class="container-fluid">
   <div class="row header-row">
     <div class="col-3">
       <span>Away Team</span>
@@ -20,23 +20,24 @@
 
 
       <div *ngFor="let gm of games" class="row game-row">
-        <div class="col-3">
-          <span>{{gm.awayTeam}}</span>
-          <span>@</span>
-          <span>{{gm.homeTeam}}</span>
-        </div>
-        <div class="col-3">
-          <span>-1.5</span>
-          <span>46</span>
-        </div>
-        <div class="col-6">
-          <span>pick away thing</span>
-          <span>pick home thing</span>
-          <span>pick under</span>
-          <span>pick over</span>
+
+          <span class="col-1">{{gm.gameTime | date: 'E, h:mm a' }}</span>
+          <span class="col-2">{{gm.location}}</span>
+
+        <div class="col-3" style="justify-content: flex-start">
+          <span>{{gm.awayTeam.fullName}}</span>
+          <span> @ </span>
+          <span>{{gm.homeTeam.fullName}}</span>
         </div>
 
-
+          <span class="col-1">{{gm.odds?.details}}</span>
+          <span class="col-1">{{gm.odds?.overUnder}}</span>
+        <div class="col-4">
+          <button type="button" class="col btn btn-outline-primary btn-sm"> Pick {{gm.odds?.details}} </button>
+          <button type="button" class="col btn btn-outline-primary btn-sm"> Pick {{gm.homeTeam.abbreviation}} {{-1.5}} </button>
+          <button type="button" class="col btn btn-outline-primary btn-sm"> Pick under {{gm.odds?.overUnder}} </button>
+          <button type="button" class="col btn btn-outline-primary btn-sm"> Pick over {{gm.odds?.overUnder}} </button>
+        </div>
     </div>
 
 

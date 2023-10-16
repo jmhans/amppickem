@@ -5,7 +5,7 @@ var express = require('express');
 var router = express.Router();
 
 
-const Game = require('../models/game');
+const Game = require('../models/game').NFLGame;
 const ObjectId = require('mongoose').Types.ObjectId;
 
 class GameController extends BaseController{

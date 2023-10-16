@@ -1,14 +1,13 @@
 /*jshint esversion: 8 */
 
-//const yahoo = require('./../yahoo/yahooFantasyBaseball');
 const qs = require('qs');
 const fs = require('fs');
 const axios = require('axios');
 
 var express = require('express');
 var router = express.Router();
-const NFLGame = require('./../models/game');
-const Line = require('./../models/line');
+const NFLGame = require('./../models/game').NFLGame;
+const Line = require('./../models/line').model;
 
 
   const ABBREV_MAP = {
@@ -44,8 +43,6 @@ const Line = require('./../models/line');
     "CINCINNATI BENGALS": "CIN",
     "LAS VEGAS RAIDERS" : "LV"
   }
-
-
 
 
 class NFLController {
@@ -136,26 +133,45 @@ class NFLController {
 
         //this.WEEK = req.params.weekId ? req.params.weekId : this.WEEK;
         const sb = await this.getFullScoreboard(req.params.weekId);
+        const updateOdds = req.query.updateOdds || false
 
         let translated = sb.events.map((espn_event)=> {
-          let homeTeam =espn_event.competitions[0].competitors.find((c)=> {return c.homeAway== 'home'})
-          let awayTeam =espn_event.competitions[0].competitors.find((c)=> {return c.homeAway== 'away'})
-          return {
-            nflGameId: espn_event.id,
-            gameTime: espn_event.date,
-            status: espn_event.status.type.description,
-            homeTeam: homeTeam.team.abbreviation,
-            awayTeam: awayTeam.team.abbreviation,
-            score: {"home": parseInt(homeTeam.score), "away": parseInt(awayTeam.score), "total": parseInt(homeTeam.score)+parseInt(awayTeam.score)},
-            season: espn_event.season.year,
-            week: espn_event.week.number
+
+          for (const comp of espn_event.competitions) {
+            let homeTeam =comp.competitors.find((c)=> {return c.homeAway== 'home'})
+            let awayTeam =comp.competitors.find((c)=> {return c.homeAway== 'away'})
+
+              let baseObj ={
+                  nflGameId: espn_event.id,
+                  gameTime: espn_event.date,
+                  status: espn_event.status.type.description,
+                  homeTeam: {fullName: homeTeam.team.displayName, abbreviation: homeTeam.team.abbreviation},
+                  awayTeam: {fullName: awayTeam.team.displayName, abbreviation: awayTeam.team.abbreviation},
+                  score: {"home": parseInt(homeTeam.score), "away": parseInt(awayTeam.score), "total": parseInt(homeTeam.score)+parseInt(awayTeam.score)},
+                  season: espn_event.season.year,
+                  week: espn_event.week.number,
+                  location: comp.venue.fullName
+                }
+
+                if (updateOdds) {
+                  const spreadReg = new RegExp('^(?<tm>.*) (?<spread>.*)$', 'gm')
+
+                  let baseOdds = spreadReg.exec(comp.odds[0].details).groups
+
+                    return {...baseObj, odds: {...comp.odds[0], team: baseOdds.tm, spread: baseOdds.spread}}
+                } else {
+                  return baseObj
+
+                }
+
+              }
+            })
+
+
+          for (let ev=0; ev<translated.length; ev++) {
+              await this._saveNFLGameToDB(translated[ev])
           }
-        })
 
-
-        for (let ev=0; ev<translated.length; ev++) {
-            await this._saveNFLGameToDB(translated[ev])
-        }
 
 
         return res.send(translated);
@@ -169,7 +185,9 @@ class NFLController {
 
 
 
+  translateSpread(tm, spreadInfo) {
 
+  }
 
   route() {
     router.get('/nfl/scoreboard', (...args) => this._getScoreboard(...args))
