@@ -1,4 +1,6 @@
 
+<div *ngIf="scoreData$ | async as scoreData"> Week {{scoreData?.week.number}}</div>
+
 <div *ngIf="picks$ | async as games"  class="container-fluid">
   <div class="row header-row">
     <div class="col-3">
@@ -33,8 +35,8 @@
           <span class="col-1">{{gm.odds?.details}}</span>
           <span class="col-1">{{gm.odds?.overUnder}}</span>
         <div class="col-4">
-          <button type="button" class="col btn btn-outline-primary btn-sm"> Pick {{gm.odds?.details}} </button>
-          <button type="button" class="col btn btn-outline-primary btn-sm"> Pick {{gm.homeTeam.abbreviation}} {{-1.5}} </button>
+          <button type="button" class="col btn btn-outline-primary btn-sm"> Pick {{gm.awayTeam.abbreviation}} {{gm.odds?.team == gm.awayTeam.abbreviation ? ((gm.odds?.spread>0 ? '+': '') + gm.odds?.spread) : ((gm.odds?.spread>0 ? '': '+') + (-1 * gm.odds?.spread))}} </button>
+          <button type="button" class="col btn btn-outline-primary btn-sm"> Pick {{gm.homeTeam.abbreviation}} {{gm.odds?.team == gm.homeTeam.abbreviation ? ((gm.odds?.spread>0 ? '+': '') + gm.odds?.spread) : ((gm.odds?.spread>0 ? '': '+') + (-1 * gm.odds?.spread))}} </button>
           <button type="button" class="col btn btn-outline-primary btn-sm"> Pick under {{gm.odds?.overUnder}} </button>
           <button type="button" class="col btn btn-outline-primary btn-sm"> Pick over {{gm.odds?.overUnder}} </button>
         </div>

@@ -26,6 +26,14 @@ export class ApiService {
 
     }
 
+    getCurrentNFLScores$(): Observable<any[]> {
+      return this.http
+        .get<any[]>(`http://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard`)
+        .pipe(
+          catchError((error) => this._handleError(error))
+        )
+    }
+
 
 
 

@@ -134,45 +134,46 @@ class NFLController {
         //this.WEEK = req.params.weekId ? req.params.weekId : this.WEEK;
         const sb = await this.getFullScoreboard(req.params.weekId);
         const updateOdds = req.query.updateOdds || false
+        let translated = []
+        for(let evt of sb.events) {
+          for (let comp of evt.competitions ) {
 
-        let translated = sb.events.map((espn_event)=> {
-
-          for (const comp of espn_event.competitions) {
+            //let comp = evt.competitions[comp_i]
             let homeTeam =comp.competitors.find((c)=> {return c.homeAway== 'home'})
             let awayTeam =comp.competitors.find((c)=> {return c.homeAway== 'away'})
 
               let baseObj ={
-                  nflGameId: espn_event.id,
-                  gameTime: espn_event.date,
-                  status: espn_event.status.type.description,
+                  nflGameId: evt.id,
+                  gameTime: evt.date,
+                  status: evt.status.type.description,
                   homeTeam: {fullName: homeTeam.team.displayName, abbreviation: homeTeam.team.abbreviation},
                   awayTeam: {fullName: awayTeam.team.displayName, abbreviation: awayTeam.team.abbreviation},
                   score: {"home": parseInt(homeTeam.score), "away": parseInt(awayTeam.score), "total": parseInt(homeTeam.score)+parseInt(awayTeam.score)},
-                  season: espn_event.season.year,
-                  week: espn_event.week.number,
+                  season: evt.season.year,
+                  week: evt.week.number,
                   location: comp.venue.fullName
                 }
 
-                if (updateOdds) {
+                if (updateOdds && comp.odds && comp.odds.length >=1 ) {
                   const spreadReg = new RegExp('^(?<tm>.*) (?<spread>.*)$', 'gm')
+                  if (comp.odds && comp.odds.length >=1 ) {
+                    let baseOdds = spreadReg.exec(comp.odds[0].details).groups
+                    //console.log(baseOdds)
+                    let newObj ={...baseObj, odds: { team: baseOdds.tm, spread: baseOdds.spread,...comp.odds[0]}}
+                    console.log(newObj)
+                    let saved = await this._saveNFLGameToDB(newObj)
+                    translated.push(saved)
 
-                  let baseOdds = spreadReg.exec(comp.odds[0].details).groups
+                  }
 
-                    return {...baseObj, odds: {...comp.odds[0], team: baseOdds.tm, spread: baseOdds.spread}}
                 } else {
-                  return baseObj
-
+                  let saved = await this._saveNFLGameToDB(baseObj)
+                  translated.push(saved)
                 }
 
               }
-            })
 
-
-          for (let ev=0; ev<translated.length; ev++) {
-              await this._saveNFLGameToDB(translated[ev])
-          }
-
-
+            }
 
         return res.send(translated);
 

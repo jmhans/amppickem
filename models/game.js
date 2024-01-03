@@ -13,7 +13,7 @@ var gameSchema = new mongoose.Schema({
   week: {type: Number, required: false},
   season: {type: Number, required: false},
   location: {type: String, required: false},
-  odds: {type: {details: String, overUnder: Number}, required: false}
+  odds: {type: {details: String, overUnder: Number, team: String, spread: Number}, required: false}
 
 })
 var gamelineSchema = new mongoose.Schema({
