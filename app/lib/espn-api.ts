@@ -25,8 +25,21 @@ export interface EspnGame {
 export async function fetchWeekFromEspn(year: number, week: number): Promise<EspnGame[]> {
   const url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${year}&seasontype=2&week=${week}`;
   const res = await fetch(url, {
+    // A bare User-Agent isn't enough from a datacenter IP (Vercel's serverless
+    // functions) — Akamai's bot detection is stricter there than from a home
+    // network. A fuller, more realistic browser header set gets through.
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Referer': 'https://www.espn.com/nfl/scoreboard',
+      'Origin': 'https://www.espn.com',
+      'sec-ch-ua': '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'empty',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-site': 'same-site',
     },
   });
   if (!res.ok) {
