@@ -43,7 +43,8 @@ export async function fetchWeekFromEspn(year: number, week: number): Promise<Esp
     },
   });
   if (!res.ok) {
-    throw new Error(`ESPN scoreboard request failed: ${res.status}`);
+    const body = await res.text().catch(() => '');
+    throw new Error(`ESPN scoreboard request failed: ${res.status} — ${body.slice(0, 300)}`);
   }
   const data = await res.json();
   const events: any[] = data.events ?? [];
