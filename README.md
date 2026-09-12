@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Requires a `.env.local` with `POSTGRES_URL`, `POSTGRES_URL_DEV`, `AUTH0_SECRET`, `APP_BASE_URL`, `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `CRON_SECRET` — see amp-playoff-fantasy for the shared Auth0/DB values.
+Requires a `.env.local` with `POSTGRES_URL`, `POSTGRES_URL_DEV`, `AUTH0_SECRET`, `APP_BASE_URL`, `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `CRON_SECRET` — see amp-playoff-fantasy for the shared Auth0/DB values. For the commissioner-email feature, also `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `COMMISSIONER_EMAIL` (see "Commissioner sync" below).
 
 ## Database
 
@@ -27,3 +27,12 @@ npm run db:studio     # browse the DB
 - **Picks**: participants pick against locked (visible) games only, via `picks/[participantId]`.
 - **Grading**: `admin/results` grades picks (win/loss/push) once a game is final — idempotent, re-gradable at any time, self-heals from a corrected score or line.
 - **Crons**: `api/cron/sync-games` (daily line/score sync + lock check) and `api/cron/grade` (daily re-grade) — both require a `CRON_SECRET` bearer token.
+
+## Commissioner sync (temporary bridge)
+
+The commissioner currently runs the pool from a hand-built xlsx (`app/lib/templates/pickem-template.xlsx`, VLOOKUP/REPLACE formulas and all) and isn't ready to change that process. Until they are, the picks page can generate that exact file from a participant's picks and email it as an attachment — no participant needs to touch Excel themselves.
+
+- `app/lib/xlsx-export.ts` clones the template and fills in one week's games + one participant's marks (`X` in the Away/Home/Under/Over columns).
+- `app/api/picks/export` (GET) streams the generated file for download; `app/api/picks/email-commissioner` (POST) generates it and emails it via Gmail SMTP (`nodemailer`). Both require the caller to own the participant (or be admin) — same check `setPick`/`removePick` use.
+- Env vars: `GMAIL_USER` (the sending Gmail address), `GMAIL_APP_PASSWORD` (a Google "app password" — requires 2FA on that account, generate one at https://myaccount.google.com/apppasswords; it is NOT the account's regular login password), `COMMISSIONER_EMAIL` (defaults conceptually to `Michael.E.Shoup@ampf.com`, set explicitly). No custom domain needed — mail sends as `GMAIL_USER` directly.
+- This is intentionally a bridge, not the final state — once the commissioner (and enough players) are willing to work entirely in-app, this export/email path and the template file can go away. A "commissioner portal" for uploading a week's picks in bulk is a separate, not-yet-built feature.

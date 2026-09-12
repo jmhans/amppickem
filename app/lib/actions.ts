@@ -1,7 +1,7 @@
 'use server';
 
 import { db } from '@/app/lib/db';
-import { participants, seasons, games, picks, type PickType } from '@/app/lib/db/schema';
+import { participants, seasons, games, picks, type PickType, type PickSelection } from '@/app/lib/db/schema';
 import { eq, and, isNotNull, asc, sql } from 'drizzle-orm';
 import { auth0 } from '@/app/lib/auth0';
 import { isAdmin } from '@/app/lib/auth-utils';
@@ -172,7 +172,7 @@ export async function getPicksForParticipantWeek(participantId: number, seasonId
     .where(and(eq(picks.participantId, participantId), eq(picks.seasonId, seasonId), eq(picks.week, week)));
 }
 
-async function requireCanEditParticipant(participantId: number) {
+export async function requireCanEditParticipant(participantId: number) {
   const session = await auth0.getSession();
   if (!session?.user) return { ok: false as const, error: 'Not logged in' };
 
@@ -429,4 +429,55 @@ export async function setGameResult(gameId: number, homeScore: number | null, aw
     .where(eq(games.id, gameId));
 
   return { success: true };
+}
+
+// --- Commissioner xlsx export (bridge until the commissioner accepts picks in-app) ---
+
+export interface PicksExportGame {
+  gameTime: Date | null;
+  awayTeam: string;
+  homeTeam: string;
+  spread: number | null;
+  overUnder: number | null;
+  spreadSelection: 'home' | 'away' | null;
+  overUnderSelection: 'over' | 'under' | null;
+}
+
+/**
+ * One participant's full week — every scheduled game (not just picked ones,
+ * matching the commissioner's spreadsheet layout) with that participant's
+ * spread/O-U marks, if any, merged in. A participant may pick both the
+ * spread AND the O/U on the same game, so both selections are carried
+ * independently rather than a single "the pick" per game.
+ */
+export async function getPicksExportData(participantId: number, seasonId: number, week: number) {
+  const [participant, weekGames, weekPicks] = await Promise.all([
+    getParticipantById(participantId),
+    getGamesForWeek(seasonId, week),
+    getPicksForParticipantWeek(participantId, seasonId, week),
+  ]);
+  if (!participant) throw new Error('Participant not found');
+
+  const picksByGame = new Map<number, { spread?: PickSelection; overUnder?: PickSelection }>();
+  for (const p of weekPicks) {
+    const entry = picksByGame.get(p.gameId) ?? {};
+    if (p.pickType === 'spread') entry.spread = p.selection as PickSelection;
+    else entry.overUnder = p.selection as PickSelection;
+    picksByGame.set(p.gameId, entry);
+  }
+
+  const exportGames: PicksExportGame[] = weekGames.map((g) => {
+    const pick = picksByGame.get(g.id);
+    return {
+      gameTime: g.gameTime,
+      awayTeam: g.awayTeam,
+      homeTeam: g.homeTeam,
+      spread: g.spread,
+      overUnder: g.overUnder,
+      spreadSelection: (pick?.spread as 'home' | 'away' | undefined) ?? null,
+      overUnderSelection: (pick?.overUnder as 'over' | 'under' | undefined) ?? null,
+    };
+  });
+
+  return { participant, exportGames };
 }

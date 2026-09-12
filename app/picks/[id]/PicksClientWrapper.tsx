@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { getWeekBoardData, setPick, removePick } from '@/app/lib/actions';
 import WeekBoard, { type BoardGame, type BoardPick } from './WeekBoard';
 import PickCounter from './PickCounter';
+import CommissionerExport from './CommissionerExport';
 
 export default function PicksClientWrapper({
   participantId,
@@ -80,6 +81,8 @@ export default function PicksClientWrapper({
         </select>
         <PickCounter count={picks.length} max={picksPerWeek} />
       </div>
+
+      {canEdit && <CommissionerExport participantId={participantId} week={week} />}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
