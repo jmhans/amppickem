@@ -8,6 +8,7 @@ import { isAdmin } from '@/app/lib/auth-utils';
 import { gradePick } from '@/app/lib/grading';
 import { isPickLocked } from '@/app/lib/pick-lock';
 import { syncWeekGames } from '@/app/lib/espn-api';
+import { computeLockThresholdFromEarliestGame } from '@/app/lib/lines-lock';
 import {
   computeParticipantWeekStats,
   computeWeeklyStandings,
@@ -375,7 +376,7 @@ export interface StandingsRawData {
   rawPicks: RawPick[];
   weekComplete: WeekCompleteMap;
   payoutConfig: PayoutConfig;
-  latestWeekWithAnyGame: number | null;
+  currentWeek: number | null;
 }
 
 /** Shared raw fetch feeding both the Weekly and Season standings tabs — see app/lib/standings-calc.ts for the actual math. */
@@ -384,25 +385,41 @@ export async function getStandingsRawData(seasonId: number): Promise<StandingsRa
     db.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1).then((r) => r[0]),
     db.select({ id: participants.id, name: participants.name }).from(participants).where(eq(participants.isActive, true)),
     db.select({ participantId: picks.participantId, week: picks.week, result: picks.result }).from(picks).where(eq(picks.seasonId, seasonId)),
-    db.select({ week: games.week, isFinal: games.isFinal }).from(games).where(eq(games.seasonId, seasonId)),
+    db.select({ week: games.week, isFinal: games.isFinal, gameTime: games.gameTime }).from(games).where(eq(games.seasonId, seasonId)),
     db.select({ rank: payoutTiers.rank, percentage: payoutTiers.percentage }).from(payoutTiers).where(eq(payoutTiers.seasonId, seasonId)),
   ]);
 
   if (!season) throw new Error('Season not found');
 
-  const gamesByWeek = new Map<number, { total: number; final: number }>();
+  // ESPN's schedule is synced for the whole season well in advance, so "does this week have
+  // any game row" is true for nearly every week almost immediately — useless for picking a
+  // default week. What actually matters is whether the week's pick cycle has STARTED — reuse
+  // the same lock-threshold moment that already governs when a week's lines unlock (default
+  // Tuesday 7am Central, admin-configurable in /admin/seasons), so "current week" and "lines
+  // are open" flip at the same, single, configured instant instead of two independent rules.
+  const gamesByWeek = new Map<number, { total: number; final: number; earliestGameTime: Date | null }>();
   for (const g of seasonGames) {
-    const entry = gamesByWeek.get(g.week) ?? { total: 0, final: 0 };
+    const entry = gamesByWeek.get(g.week) ?? { total: 0, final: 0, earliestGameTime: null };
     entry.total += 1;
     if (g.isFinal) entry.final += 1;
+    if (g.gameTime && (!entry.earliestGameTime || g.gameTime < entry.earliestGameTime)) entry.earliestGameTime = g.gameTime;
     gamesByWeek.set(g.week, entry);
   }
+  const now = new Date();
   const weekComplete: WeekCompleteMap = {};
-  let latestWeekWithAnyGame: number | null = null;
+  let currentWeek: number | null = null;
   for (let week = season.firstWeek; week <= season.lastWeek; week++) {
     const entry = gamesByWeek.get(week);
     weekComplete[week] = !!entry && entry.total > 0 && entry.final === entry.total;
-    if (entry && entry.total > 0) latestWeekWithAnyGame = week;
+    if (entry?.earliestGameTime) {
+      const threshold = computeLockThresholdFromEarliestGame(
+        entry.earliestGameTime,
+        season.lineLockDayOfWeek,
+        season.lineLockHour,
+        season.lineLockTimezone,
+      );
+      if (threshold <= now) currentWeek = week;
+    }
   }
 
   return {
@@ -418,14 +435,14 @@ export async function getStandingsRawData(seasonId: number): Promise<StandingsRa
       numWeeksInSeason: season.lastWeek - season.firstWeek + 1,
       tiers,
     },
-    latestWeekWithAnyGame,
+    currentWeek,
   };
 }
 
-/** The week the standings views should default to — the latest week with any game scheduled, falling back to the season's first week. */
+/** The week the standings views should default to — the current pick cycle (see the lock-threshold comment above), falling back to the season's first week. */
 export async function getLatestStandingsWeek(seasonId: number): Promise<number> {
   const raw = await getStandingsRawData(seasonId);
-  return raw.latestWeekWithAnyGame ?? raw.season.firstWeek;
+  return raw.currentWeek ?? raw.season.firstWeek;
 }
 
 export interface WeeklyStandingsDisplayRow extends WeeklyStandingsRow {
@@ -445,7 +462,7 @@ export interface SeasonStandingsDisplayRow extends SeasonStandingsRow {
 
 export async function getSeasonStandings(seasonId: number, uptoWeek?: number): Promise<SeasonStandingsDisplayRow[]> {
   const raw = await getStandingsRawData(seasonId);
-  const effectiveUptoWeek = uptoWeek ?? raw.latestWeekWithAnyGame ?? raw.season.firstWeek;
+  const effectiveUptoWeek = uptoWeek ?? raw.currentWeek ?? raw.season.firstWeek;
   const weekStats = computeParticipantWeekStats(raw.rawPicks, raw.participantIds, raw.weekComplete, raw.season.picksPerWeek);
   const rows = computeSeasonStandings(weekStats, raw.participantIds, raw.weekComplete, effectiveUptoWeek, raw.season.picksPerWeek, raw.payoutConfig);
   return rows.map((r) => ({ ...r, name: raw.participantNames.get(r.participantId) ?? 'Unknown' }));

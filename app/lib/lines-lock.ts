@@ -39,30 +39,21 @@ function zonedTimeToUtc(year: number, month: number, day: number, hour: number, 
 }
 
 /**
- * The UTC instant at which a given (season, week)'s lines should freeze —
- * the season's configured day-of-week/hour/timezone, in the calendar week
- * containing that week's earliest kickoff (so "Tuesday 7am Central" resolves
- * to the Tuesday a couple of days before that week's Thursday/Sunday games,
- * not some other week's Tuesday). Returns null if the week has no games yet
- * (nothing synced to anchor against).
+ * The UTC instant at which a week whose earliest kickoff is `earliestGameTime`
+ * should freeze — the season's configured day-of-week/hour/timezone, in the
+ * calendar week containing that kickoff (so "Tuesday 7am Central" resolves to
+ * the Tuesday a couple of days before that week's Thursday/Sunday games, not
+ * some other week's Tuesday). Pure — no DB access — so callers who already
+ * have a week's earliest game time on hand (e.g. standings' "current week"
+ * default, see actions.ts) can reuse this without a redundant games query.
  */
-export async function computeLockThreshold(
-  seasonId: number,
-  week: number,
+export function computeLockThresholdFromEarliestGame(
+  earliestGameTime: Date,
   lineLockDayOfWeek: number,
   lineLockHour: number,
   lineLockTimezone: string,
-): Promise<Date | null> {
-  const weekGames = await db
-    .select({ gameTime: games.gameTime })
-    .from(games)
-    .where(and(eq(games.seasonId, seasonId), eq(games.week, week)));
-
-  const times = weekGames.map((g) => g.gameTime).filter((t): t is Date => t != null);
-  if (times.length === 0) return null;
-  const earliest = times.reduce((a, b) => (a < b ? a : b));
-
-  const { year, month, day } = getZonedYMD(earliest, lineLockTimezone);
+): Date {
+  const { year, month, day } = getZonedYMD(earliestGameTime, lineLockTimezone);
   // Jan 1 1970 (epoch day 0) was a Thursday (JS getDay()=4). Use that to get
   // day-of-week (0=Sun..6=Sat) from a pure calendar date without involving
   // the server's own local timezone.
@@ -81,6 +72,29 @@ export async function computeLockThreshold(
     0,
     lineLockTimezone,
   );
+}
+
+/**
+ * The UTC instant at which a given (season, week)'s lines should freeze.
+ * Returns null if the week has no games yet (nothing synced to anchor against).
+ */
+export async function computeLockThreshold(
+  seasonId: number,
+  week: number,
+  lineLockDayOfWeek: number,
+  lineLockHour: number,
+  lineLockTimezone: string,
+): Promise<Date | null> {
+  const weekGames = await db
+    .select({ gameTime: games.gameTime })
+    .from(games)
+    .where(and(eq(games.seasonId, seasonId), eq(games.week, week)));
+
+  const times = weekGames.map((g) => g.gameTime).filter((t): t is Date => t != null);
+  if (times.length === 0) return null;
+  const earliest = times.reduce((a, b) => (a < b ? a : b));
+
+  return computeLockThresholdFromEarliestGame(earliest, lineLockDayOfWeek, lineLockHour, lineLockTimezone);
 }
 
 /**
