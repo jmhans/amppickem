@@ -26,22 +26,22 @@ export default function CommissionerExport({ participantId, week }: { participan
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-1.5">
       <a
         href={`/api/picks/export?participantId=${participantId}&week=${week}`}
-        className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+        className="rounded-lg border border-gray-300 dark:border-gray-600 px-2.5 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
       >
         Download xlsx
       </a>
       <button
         onClick={handleEmail}
         disabled={sending}
-        className="rounded-lg bg-blue-500 hover:bg-blue-600 disabled:opacity-50 px-3 py-1.5 text-sm text-white transition-colors"
+        className="rounded-lg bg-blue-500 hover:bg-blue-600 disabled:opacity-50 px-2.5 py-1 text-xs text-white transition-colors"
       >
         {sending ? 'Sending…' : 'Email to Commissioner'}
       </button>
       {status && (
-        <span className={`text-sm ${status.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+        <span className={`text-xs ${status.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
           {status.message}
         </span>
       )}

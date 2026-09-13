@@ -30,17 +30,17 @@ export default async function PicksPage({
 
   return (
     <main>
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex items-center gap-3 mb-4">
         <Link
           href="/participants"
-          className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition-colors"
+          className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition-colors"
           aria-label="Back to Standings"
         >
-          <svg className="h-6 w-6" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="h-5 w-5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
             <path d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
           </svg>
         </Link>
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">
           {participant.name} — Picks
         </h1>
       </div>

@@ -31,7 +31,7 @@ export default function RootLayout({
       >
         <Auth0Provider>
           <div className="min-h-screen bg-white dark:bg-gray-900">
-            <div className="p-6">
+            <div className="p-4 md:p-6">
               <Header />
               {children}
             </div>

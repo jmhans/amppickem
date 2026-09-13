@@ -9,6 +9,9 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/api/picks/export': ['./app/lib/templates/**'],
   },
+  images: {
+    remotePatterns: [{ protocol: 'https', hostname: 'a.espncdn.com', pathname: '/i/teamlogos/nfl/**' }],
+  },
 };
 
 export default nextConfig;

@@ -52,37 +52,45 @@ export default function PicksClientWrapper({
     if (!canEdit) return;
     const key = `${gameId}-${pickType}`;
     const existing = picks.find((p) => p.gameId === gameId && p.pickType === pickType);
+    const removing = existing?.selection === selection;
     setError(null);
     setSavingKey(key);
 
-    const result = existing?.selection === selection
+    const result = removing
       ? await removePick(participantId, gameId, pickType)
       : await setPick(participantId, seasonId, week, gameId, pickType, selection);
 
     setSavingKey(null);
     if (result.success) {
-      load();
+      // Update locally instead of re-fetching the whole week — a full refetch
+      // briefly unmounts the board behind a "Loading…" placeholder, which
+      // reads as a full page reload even though no navigation happens.
+      setPicksState((prev) => {
+        const withoutThis = prev.filter((p) => !(p.gameId === gameId && p.pickType === pickType));
+        return removing ? withoutThis : [...withoutThis, { gameId, pickType, selection, result: 'pending' }];
+      });
     } else {
       setError(result.error ?? 'Failed to save pick');
     }
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <select
-          value={week}
-          onChange={(e) => handleWeekChange(Number(e.target.value))}
-          className="rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white px-3 py-2 text-sm"
-        >
-          {weeks.map((w) => (
-            <option key={w} value={w}>Week {w}</option>
-          ))}
-        </select>
-        <PickCounter count={picks.length} max={picksPerWeek} />
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <select
+            value={week}
+            onChange={(e) => handleWeekChange(Number(e.target.value))}
+            className="rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white px-2.5 py-1.5 text-sm"
+          >
+            {weeks.map((w) => (
+              <option key={w} value={w}>Week {w}</option>
+            ))}
+          </select>
+          <PickCounter count={picks.length} max={picksPerWeek} />
+        </div>
+        {canEdit && <CommissionerExport participantId={participantId} week={week} />}
       </div>
-
-      {canEdit && <CommissionerExport participantId={participantId} week={week} />}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
