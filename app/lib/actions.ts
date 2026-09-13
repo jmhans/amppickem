@@ -191,11 +191,12 @@ export async function requireCanEditParticipant(participantId: number) {
 /**
  * Sets (inserts or changes) one pick. Validates: viewer owns this participant
  * (or is admin), the game belongs to the given season/week, its lines are
- * locked/visible, the game itself isn't pick-locked (past kickoff, unless an
- * admin is making the edit — same override philosophy as the weekly lines
- * lock), a line exists for the requested pick type, and — only when this
- * would be a NEW pick, not changing an existing one — the season's
- * picksPerWeek cap isn't already reached.
+ * locked/visible, the game itself isn't pick-locked (past kickoff — locked
+ * means locked for EVERYONE, admins included; an admin's only way past it is
+ * to explicitly toggle the game unlocked first via setGamePickLock), a line
+ * exists for the requested pick type, and — only when this would be a NEW
+ * pick, not changing an existing one — the season's picksPerWeek cap isn't
+ * already reached.
  */
 export async function setPick(
   participantId: number,
@@ -215,8 +216,8 @@ export async function setPick(
   if (!game.linesLockedAt) {
     return { success: false, error: "This game's lines aren't locked/visible yet" };
   }
-  if (!auth.isAdmin && isPickLocked(game)) {
-    return { success: false, error: 'This game is locked — picks close at kickoff' };
+  if (isPickLocked(game)) {
+    return { success: false, error: 'This game is locked — an admin must unlock it before picks can change' };
   }
   const line = pickType === 'spread' ? game.spread : game.overUnder;
   if (line == null) {
@@ -260,11 +261,9 @@ export async function removePick(participantId: number, gameId: number, pickType
   const auth = await requireCanEditParticipant(participantId);
   if (!auth.ok) return { success: false, error: auth.error };
 
-  if (!auth.isAdmin) {
-    const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
-    if (game && isPickLocked(game)) {
-      return { success: false, error: 'This game is locked — picks close at kickoff' };
-    }
+  const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+  if (game && isPickLocked(game)) {
+    return { success: false, error: 'This game is locked — an admin must unlock it before picks can change' };
   }
 
   await db

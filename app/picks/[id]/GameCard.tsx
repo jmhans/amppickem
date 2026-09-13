@@ -95,8 +95,10 @@ export default function GameCard({
   onPick: (gameId: number, pickType: 'spread' | 'over_under', selection: string) => void;
   onToggleLock: (gameId: number, currentlyLocked: boolean) => void;
 }) {
+  // Locked means locked for everyone, admins included — an admin's only way past it is the
+  // explicit unlock toggle below, which flips this to false before any pick can be edited.
   const locked = isPickLocked(game);
-  const disabledByLock = locked && !isAdminUser;
+  const disabledByLock = locked;
 
   return (
     <div className="flex w-[180px] shrink-0 snap-start flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2.5 shadow-sm">
