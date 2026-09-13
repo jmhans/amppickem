@@ -514,11 +514,14 @@ const REFRESH_COOLDOWN_MS = 60_000;
 const LAST_MANUAL_REFRESH_KEY = 'last_manual_refresh';
 
 /**
- * Syncs scores from ESPN + re-grades any week with a kicked-off-but-not-yet-final
- * game, so results/standings don't have to wait for the next daily cron. Rate
- * limited app-wide (not per-user) via systemSettings, since this fans out to
- * ESPN requests and a full grading pass — anyone mashing the button shouldn't
- * be able to hammer either.
+ * Syncs scores from ESPN for any week with a kicked-off-but-not-yet-final game,
+ * then re-grades every week that has ever had a final game (grading is cheap
+ * and idempotent — no reason to gate it behind the sync check, which would
+ * otherwise leave an early week's finished games ungraded while that same
+ * week's later games haven't kicked off yet). So results/standings don't have
+ * to wait for the next daily cron. Rate limited app-wide (not per-user) via
+ * systemSettings, since the sync half fans out to ESPN requests — anyone
+ * mashing the button shouldn't be able to hammer it.
  */
 export async function refreshResults() {
   const session = await auth0.getSession();
@@ -542,25 +545,41 @@ export async function refreshResults() {
   const [activeSeason] = await db.select().from(seasons).where(eq(seasons.isActive, true)).limit(1);
   if (!activeSeason) return { success: true as const, weeksSynced: 0, graded: 0, changed: 0 };
 
-  const pendingWeeks = await db
+  // Weeks worth an ESPN call: something's kicked off but ESPN hasn't told us it's final yet.
+  const weeksNeedingSync = await db
     .selectDistinct({ week: games.week })
     .from(games)
     .where(and(eq(games.seasonId, activeSeason.id), lte(games.gameTime, now), eq(games.isFinal, false)));
 
-  let totalGraded = 0;
-  let totalChanged = 0;
-  for (const { week } of pendingWeeks) {
+  for (const { week } of weeksNeedingSync) {
     try {
       await syncWeekGames(activeSeason.id, activeSeason.year, week);
     } catch (error) {
       console.error(`Manual refresh: ESPN sync failed for week ${week}:`, error);
     }
+  }
+
+  // Grading is cheap (pure DB, no ESPN calls) and idempotent, so grade every week that has
+  // EVER had a final game — not just weeks that just got synced. A week can have some games
+  // final (e.g. Wednesday/Thursday openers) while its Sunday games haven't kicked off yet,
+  // which would make weeksNeedingSync empty for that week even though its finished games'
+  // picks still need grading.
+  const weeksWithFinalGames = await db
+    .selectDistinct({ week: games.week })
+    .from(games)
+    .where(and(eq(games.seasonId, activeSeason.id), eq(games.isFinal, true)));
+
+  const weeksToGrade = new Set([...weeksNeedingSync.map((w) => w.week), ...weeksWithFinalGames.map((w) => w.week)]);
+
+  let totalGraded = 0;
+  let totalChanged = 0;
+  for (const week of weeksToGrade) {
     const result = await gradeWeek(activeSeason.id, week);
     totalGraded += result.graded;
     totalChanged += result.changed;
   }
 
-  return { success: true as const, weeksSynced: pendingWeeks.length, graded: totalGraded, changed: totalChanged };
+  return { success: true as const, weeksSynced: weeksNeedingSync.length, graded: totalGraded, changed: totalChanged };
 }
 
 /** Admin manual override of a game's final score/status — independent of the lines lock. */
