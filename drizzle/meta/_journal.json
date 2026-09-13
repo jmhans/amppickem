@@ -15,6 +15,13 @@
       "when": 1789308395442,
       "tag": "0001_strong_vargas",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789310827174,
+      "tag": "0002_flashy_goliath",
+      "breakpoints": true
     }
   ]
 }

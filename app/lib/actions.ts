@@ -1,13 +1,23 @@
 'use server';
 
 import { db } from '@/app/lib/db';
-import { participants, seasons, games, picks, systemSettings, type PickType, type PickSelection } from '@/app/lib/db/schema';
+import { participants, seasons, games, picks, systemSettings, payoutTiers, type PickType, type PickSelection } from '@/app/lib/db/schema';
 import { eq, and, isNotNull, asc, sql, lte } from 'drizzle-orm';
 import { auth0 } from '@/app/lib/auth0';
 import { isAdmin } from '@/app/lib/auth-utils';
 import { gradePick } from '@/app/lib/grading';
 import { isPickLocked } from '@/app/lib/pick-lock';
 import { syncWeekGames } from '@/app/lib/espn-api';
+import {
+  computeParticipantWeekStats,
+  computeWeeklyStandings,
+  computeSeasonStandings,
+  type RawPick,
+  type WeekCompleteMap,
+  type PayoutConfig,
+  type WeeklyStandingsRow,
+  type SeasonStandingsRow,
+} from '@/app/lib/standings-calc';
 
 export async function getOrCreateActiveSeason() {
   try {
@@ -356,73 +366,130 @@ export async function gradeSeason(seasonId: number) {
   return { graded: totalGraded, changed: totalChanged };
 }
 
-export type StandingsRow = {
-  participantId: number;
+// --- Standings (Weekly / Season tabs) ---
+
+export interface StandingsRawData {
+  season: typeof seasons.$inferSelect;
+  participantIds: number[];
+  participantNames: Map<number, string>;
+  rawPicks: RawPick[];
+  weekComplete: WeekCompleteMap;
+  payoutConfig: PayoutConfig;
+  latestWeekWithAnyGame: number | null;
+}
+
+/** Shared raw fetch feeding both the Weekly and Season standings tabs — see app/lib/standings-calc.ts for the actual math. */
+export async function getStandingsRawData(seasonId: number): Promise<StandingsRawData> {
+  const [season, activeParticipants, seasonPicks, seasonGames, tiers] = await Promise.all([
+    db.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1).then((r) => r[0]),
+    db.select({ id: participants.id, name: participants.name }).from(participants).where(eq(participants.isActive, true)),
+    db.select({ participantId: picks.participantId, week: picks.week, result: picks.result }).from(picks).where(eq(picks.seasonId, seasonId)),
+    db.select({ week: games.week, isFinal: games.isFinal }).from(games).where(eq(games.seasonId, seasonId)),
+    db.select({ rank: payoutTiers.rank, percentage: payoutTiers.percentage }).from(payoutTiers).where(eq(payoutTiers.seasonId, seasonId)),
+  ]);
+
+  if (!season) throw new Error('Season not found');
+
+  const gamesByWeek = new Map<number, { total: number; final: number }>();
+  for (const g of seasonGames) {
+    const entry = gamesByWeek.get(g.week) ?? { total: 0, final: 0 };
+    entry.total += 1;
+    if (g.isFinal) entry.final += 1;
+    gamesByWeek.set(g.week, entry);
+  }
+  const weekComplete: WeekCompleteMap = {};
+  let latestWeekWithAnyGame: number | null = null;
+  for (let week = season.firstWeek; week <= season.lastWeek; week++) {
+    const entry = gamesByWeek.get(week);
+    weekComplete[week] = !!entry && entry.total > 0 && entry.final === entry.total;
+    if (entry && entry.total > 0) latestWeekWithAnyGame = week;
+  }
+
+  return {
+    season,
+    participantIds: activeParticipants.map((p) => p.id),
+    participantNames: new Map(activeParticipants.map((p) => [p.id, p.name])),
+    rawPicks: seasonPicks as RawPick[],
+    weekComplete,
+    payoutConfig: {
+      entryFee: season.entryFee,
+      weeklyPotPerWeek: season.weeklyPotPerWeek,
+      lostPicksPrizeAmount: season.lostPicksPrizeAmount,
+      numWeeksInSeason: season.lastWeek - season.firstWeek + 1,
+      tiers,
+    },
+    latestWeekWithAnyGame,
+  };
+}
+
+/** The week the standings views should default to — the latest week with any game scheduled, falling back to the season's first week. */
+export async function getLatestStandingsWeek(seasonId: number): Promise<number> {
+  const raw = await getStandingsRawData(seasonId);
+  return raw.latestWeekWithAnyGame ?? raw.season.firstWeek;
+}
+
+export interface WeeklyStandingsDisplayRow extends WeeklyStandingsRow {
   name: string;
-  wins: number;
-  losses: number;
-  pushes: number;
-  pending: number;
-  graded: number;
-  winPct: number;
-};
-
-// Wins desc, then losses asc, then win% desc — pushes excluded from win% denominator.
-// Isolated here since tiebreaker rules are explicitly undecided; swap freely later.
-function compareStandings(a: StandingsRow, b: StandingsRow): number {
-  if (a.wins !== b.wins) return b.wins - a.wins;
-  if (a.losses !== b.losses) return a.losses - b.losses;
-  return b.winPct - a.winPct;
 }
 
-export async function getStandings(seasonId: number): Promise<StandingsRow[]> {
-  const rows = await db
-    .select({
-      participantId: participants.id,
-      name: participants.name,
-      wins: sql<number>`count(*) filter (where ${picks.result} = 'win')::int`,
-      losses: sql<number>`count(*) filter (where ${picks.result} = 'loss')::int`,
-      pushes: sql<number>`count(*) filter (where ${picks.result} = 'push')::int`,
-      pending: sql<number>`count(*) filter (where ${picks.result} = 'pending')::int`,
-    })
-    .from(participants)
-    .leftJoin(picks, and(eq(picks.participantId, participants.id), eq(picks.seasonId, seasonId)))
-    .where(eq(participants.isActive, true))
-    .groupBy(participants.id, participants.name);
-
-  const standings: StandingsRow[] = rows.map((r) => ({
-    ...r,
-    graded: r.wins + r.losses + r.pushes,
-    winPct: r.wins + r.losses > 0 ? r.wins / (r.wins + r.losses) : 0,
-  }));
-
-  return standings.sort(compareStandings);
+export async function getWeeklyStandings(seasonId: number, week: number): Promise<WeeklyStandingsDisplayRow[]> {
+  const raw = await getStandingsRawData(seasonId);
+  const weekStats = computeParticipantWeekStats(raw.rawPicks, raw.participantIds, raw.weekComplete, raw.season.picksPerWeek);
+  const rows = computeWeeklyStandings(weekStats, week);
+  return rows.map((r) => ({ ...r, name: raw.participantNames.get(r.participantId) ?? 'Unknown' }));
 }
 
-export type WeeklyRecordRow = {
-  participantId: number;
-  week: number;
-  wins: number;
-  losses: number;
-  pushes: number;
-  pending: number;
-  pickCount: number;
-};
+export interface SeasonStandingsDisplayRow extends SeasonStandingsRow {
+  name: string;
+}
 
-export async function getWeeklyRecords(seasonId: number): Promise<WeeklyRecordRow[]> {
-  return db
-    .select({
-      participantId: picks.participantId,
-      week: picks.week,
-      wins: sql<number>`count(*) filter (where ${picks.result} = 'win')::int`,
-      losses: sql<number>`count(*) filter (where ${picks.result} = 'loss')::int`,
-      pushes: sql<number>`count(*) filter (where ${picks.result} = 'push')::int`,
-      pending: sql<number>`count(*) filter (where ${picks.result} = 'pending')::int`,
-      pickCount: sql<number>`count(*)::int`,
-    })
-    .from(picks)
-    .where(eq(picks.seasonId, seasonId))
-    .groupBy(picks.participantId, picks.week);
+export async function getSeasonStandings(seasonId: number, uptoWeek?: number): Promise<SeasonStandingsDisplayRow[]> {
+  const raw = await getStandingsRawData(seasonId);
+  const effectiveUptoWeek = uptoWeek ?? raw.latestWeekWithAnyGame ?? raw.season.firstWeek;
+  const weekStats = computeParticipantWeekStats(raw.rawPicks, raw.participantIds, raw.weekComplete, raw.season.picksPerWeek);
+  const rows = computeSeasonStandings(weekStats, raw.participantIds, raw.weekComplete, effectiveUptoWeek, raw.season.picksPerWeek, raw.payoutConfig);
+  return rows.map((r) => ({ ...r, name: raw.participantNames.get(r.participantId) ?? 'Unknown' }));
+}
+
+// --- Admin: season + payout settings ---
+
+export async function updateSeasonSettings(
+  seasonId: number,
+  settings: {
+    picksPerWeek: number;
+    firstWeek: number;
+    lastWeek: number;
+    lineLockDayOfWeek: number;
+    lineLockHour: number;
+    lineLockTimezone: string;
+    entryFee: number;
+    weeklyPotPerWeek: number;
+    lostPicksPrizeAmount: number;
+  },
+) {
+  const auth = await requireAdmin();
+  if (!auth.ok) return { success: false, error: auth.error };
+
+  await db.update(seasons).set(settings).where(eq(seasons.id, seasonId));
+  return { success: true };
+}
+
+export async function getPayoutTiers(seasonId: number) {
+  return db.select().from(payoutTiers).where(eq(payoutTiers.seasonId, seasonId)).orderBy(asc(payoutTiers.rank));
+}
+
+/** Replace-all: admin submits the full tier list each time (small list, simpler than diffing). */
+export async function setPayoutTiers(seasonId: number, tiers: { rank: number; percentage: number }[]) {
+  const auth = await requireAdmin();
+  if (!auth.ok) return { success: false, error: auth.error };
+
+  await db.transaction(async (tx) => {
+    await tx.delete(payoutTiers).where(eq(payoutTiers.seasonId, seasonId));
+    if (tiers.length > 0) {
+      await tx.insert(payoutTiers).values(tiers.map((t) => ({ seasonId, rank: t.rank, percentage: t.percentage })));
+    }
+  });
+  return { success: true };
 }
 
 // --- Admin: results ---

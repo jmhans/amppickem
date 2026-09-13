@@ -32,8 +32,27 @@ export const seasons = ampPickemSchema.table('seasons', {
   lineLockDayOfWeek: integer('line_lock_day_of_week').default(2).notNull(), // 0=Sun..6=Sat
   lineLockHour: integer('line_lock_hour').default(7).notNull(), // 24h, in lineLockTimezone
   lineLockTimezone: text('line_lock_timezone').default('America/Chicago').notNull(),
+  // Payout configuration — see app/lib/standings-calc.ts for how these feed the season
+  // standings' "Cur Won $" column. entryFee/weeklyPotPerWeek/lostPicksPrizeAmount are dollar
+  // amounts; the weekly "skins" pool total is weeklyPotPerWeek * (lastWeek - firstWeek + 1).
+  entryFee: real('entry_fee').default(20).notNull(),
+  weeklyPotPerWeek: real('weekly_pot_per_week').default(20).notNull(),
+  lostPicksPrizeAmount: real('lost_picks_prize_amount').default(20).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+// Admin-configured season-end payout tiers — e.g. rank 1 gets 20% of the remainder pool,
+// rank 2 gets 15%, etc. See app/lib/standings-calc.ts for how the remainder pool itself is
+// computed (total entry fees minus the skins pool minus the lost-picks prize).
+export const payoutTiers = ampPickemSchema.table('payout_tiers', {
+  id: serial('id').primaryKey(),
+  seasonId: integer('season_id').notNull().references(() => seasons.id, { onDelete: 'cascade' }),
+  rank: integer('rank').notNull(), // 1 = first place
+  percentage: real('percentage').notNull(), // 0-100
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+  unique('payout_tiers_season_rank_uniq').on(t.seasonId, t.rank),
+]);
 
 export const games = ampPickemSchema.table('games', {
   id: serial('id').primaryKey(),
