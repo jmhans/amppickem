@@ -8,6 +8,13 @@
       "when": 1789210665601,
       "tag": "0000_supreme_boom_boom",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789308395442,
+      "tag": "0001_strong_vargas",
+      "breakpoints": true
     }
   ]
 }

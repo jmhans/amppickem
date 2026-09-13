@@ -1,11 +1,13 @@
 'use server';
 
 import { db } from '@/app/lib/db';
-import { participants, seasons, games, picks, type PickType, type PickSelection } from '@/app/lib/db/schema';
-import { eq, and, isNotNull, asc, sql } from 'drizzle-orm';
+import { participants, seasons, games, picks, systemSettings, type PickType, type PickSelection } from '@/app/lib/db/schema';
+import { eq, and, isNotNull, asc, sql, lte } from 'drizzle-orm';
 import { auth0 } from '@/app/lib/auth0';
 import { isAdmin } from '@/app/lib/auth-utils';
 import { gradePick } from '@/app/lib/grading';
+import { isPickLocked } from '@/app/lib/pick-lock';
+import { syncWeekGames } from '@/app/lib/espn-api';
 
 export async function getOrCreateActiveSeason() {
   try {
@@ -179,17 +181,20 @@ export async function requireCanEditParticipant(participantId: number) {
   const participant = await getParticipantById(participantId);
   if (!participant) return { ok: false as const, error: 'Participant not found' };
 
-  const canEdit = participant.auth0Id === session.user.sub || isAdmin(session.user);
+  const admin = isAdmin(session.user);
+  const canEdit = participant.auth0Id === session.user.sub || admin;
   if (!canEdit) return { ok: false as const, error: "That's not your picks to edit" };
 
-  return { ok: true as const };
+  return { ok: true as const, isAdmin: admin };
 }
 
 /**
  * Sets (inserts or changes) one pick. Validates: viewer owns this participant
  * (or is admin), the game belongs to the given season/week, its lines are
- * locked/visible, a line exists for the requested pick type, and — only when
- * this would be a NEW pick, not changing an existing one — the season's
+ * locked/visible, the game itself isn't pick-locked (past kickoff, unless an
+ * admin is making the edit — same override philosophy as the weekly lines
+ * lock), a line exists for the requested pick type, and — only when this
+ * would be a NEW pick, not changing an existing one — the season's
  * picksPerWeek cap isn't already reached.
  */
 export async function setPick(
@@ -209,6 +214,9 @@ export async function setPick(
   }
   if (!game.linesLockedAt) {
     return { success: false, error: "This game's lines aren't locked/visible yet" };
+  }
+  if (!auth.isAdmin && isPickLocked(game)) {
+    return { success: false, error: 'This game is locked — picks close at kickoff' };
   }
   const line = pickType === 'spread' ? game.spread : game.overUnder;
   if (line == null) {
@@ -252,10 +260,26 @@ export async function removePick(participantId: number, gameId: number, pickType
   const auth = await requireCanEditParticipant(participantId);
   if (!auth.ok) return { success: false, error: auth.error };
 
+  if (!auth.isAdmin) {
+    const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+    if (game && isPickLocked(game)) {
+      return { success: false, error: 'This game is locked — picks close at kickoff' };
+    }
+  }
+
   await db
     .delete(picks)
     .where(and(eq(picks.participantId, participantId), eq(picks.gameId, gameId), eq(picks.pickType, pickType)));
 
+  return { success: true };
+}
+
+/** Admin: explicitly force a game's pick-lock to a state, overriding the automatic kickoff-time default. */
+export async function setGamePickLock(gameId: number, locked: boolean) {
+  const auth = await requireAdmin();
+  if (!auth.ok) return { success: false, error: auth.error };
+
+  await db.update(games).set({ pickLockOverride: locked, updatedAt: new Date() }).where(eq(games.id, gameId));
   return { success: true };
 }
 
@@ -416,6 +440,61 @@ export async function getGamesForWeek(seasonId: number, week: number) {
     .from(games)
     .where(and(eq(games.seasonId, seasonId), eq(games.week, week)))
     .orderBy(asc(games.gameTime));
+}
+
+// --- Manual results refresh (end-user "refresh" button, app-wide cooldown) ---
+
+const REFRESH_COOLDOWN_MS = 60_000;
+const LAST_MANUAL_REFRESH_KEY = 'last_manual_refresh';
+
+/**
+ * Syncs scores from ESPN + re-grades any week with a kicked-off-but-not-yet-final
+ * game, so results/standings don't have to wait for the next daily cron. Rate
+ * limited app-wide (not per-user) via systemSettings, since this fans out to
+ * ESPN requests and a full grading pass — anyone mashing the button shouldn't
+ * be able to hammer either.
+ */
+export async function refreshResults() {
+  const session = await auth0.getSession();
+  if (!session?.user) return { success: false as const, error: 'Not logged in' };
+
+  const now = new Date();
+  const [setting] = await db.select().from(systemSettings).where(eq(systemSettings.key, LAST_MANUAL_REFRESH_KEY)).limit(1);
+  const lastRun = setting?.value ? new Date(setting.value) : null;
+  if (lastRun && now.getTime() - lastRun.getTime() < REFRESH_COOLDOWN_MS) {
+    const retryAfterSeconds = Math.ceil((REFRESH_COOLDOWN_MS - (now.getTime() - lastRun.getTime())) / 1000);
+    return { success: false as const, error: `Please wait ${retryAfterSeconds}s before refreshing again`, retryAfterSeconds };
+  }
+
+  // Claim the slot before doing any work so two near-simultaneous clicks from
+  // different users don't both slip past the check above.
+  await db
+    .insert(systemSettings)
+    .values({ key: LAST_MANUAL_REFRESH_KEY, value: now.toISOString() })
+    .onConflictDoUpdate({ target: systemSettings.key, set: { value: now.toISOString(), updatedAt: now } });
+
+  const [activeSeason] = await db.select().from(seasons).where(eq(seasons.isActive, true)).limit(1);
+  if (!activeSeason) return { success: true as const, weeksSynced: 0, graded: 0, changed: 0 };
+
+  const pendingWeeks = await db
+    .selectDistinct({ week: games.week })
+    .from(games)
+    .where(and(eq(games.seasonId, activeSeason.id), lte(games.gameTime, now), eq(games.isFinal, false)));
+
+  let totalGraded = 0;
+  let totalChanged = 0;
+  for (const { week } of pendingWeeks) {
+    try {
+      await syncWeekGames(activeSeason.id, activeSeason.year, week);
+    } catch (error) {
+      console.error(`Manual refresh: ESPN sync failed for week ${week}:`, error);
+    }
+    const result = await gradeWeek(activeSeason.id, week);
+    totalGraded += result.graded;
+    totalChanged += result.changed;
+  }
+
+  return { success: true as const, weeksSynced: pendingWeeks.length, graded: totalGraded, changed: totalChanged };
 }
 
 /** Admin manual override of a game's final score/status — independent of the lines lock. */

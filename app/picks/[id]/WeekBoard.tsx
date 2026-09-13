@@ -11,6 +11,7 @@ export type BoardGame = {
   awayScore: number | null;
   isFinal: boolean;
   gameTime: string | Date | null;
+  pickLockOverride: boolean | null;
 };
 
 export type BoardPick = {
@@ -24,14 +25,18 @@ export default function WeekBoard({
   games,
   picks,
   canEdit,
+  isAdminUser,
   savingKey,
   onPick,
+  onToggleLock,
 }: {
   games: BoardGame[];
   picks: BoardPick[];
   canEdit: boolean;
+  isAdminUser: boolean;
   savingKey: string | null;
   onPick: (gameId: number, pickType: 'spread' | 'over_under', selection: string) => void;
+  onToggleLock: (gameId: number, currentlyLocked: boolean) => void;
 }) {
   if (games.length === 0) {
     return (
@@ -62,8 +67,10 @@ export default function WeekBoard({
                 spreadPick={pickFor(game.id, 'spread')}
                 totalPick={pickFor(game.id, 'over_under')}
                 canEdit={canEdit}
+                isAdminUser={isAdminUser}
                 savingKey={savingKey}
                 onPick={onPick}
+                onToggleLock={onToggleLock}
               />
             ))}
           </div>

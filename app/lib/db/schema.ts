@@ -54,6 +54,11 @@ export const games = ampPickemSchema.table('games', {
   // late). Once set, the automatic ESPN sync never overwrites spread/overUnder for this
   // game — only an explicit admin edit can, at any time, regardless of lock state.
   linesLockedAt: timestamp('lines_locked_at'),
+  // Per-GAME pick lock, separate from linesLockedAt (which is a per-WEEK visibility gate).
+  // null = automatic: locked once gameTime has passed. true/false = explicit admin override
+  // (e.g. force-lock a game early, or force-unlock one after kickoff for a late fix). Read via
+  // app/lib/pick-lock.ts's isPickLocked() — never compare this column directly.
+  pickLockOverride: boolean('pick_lock_override'),
   homeScore: integer('home_score'),
   awayScore: integer('away_score'),
   status: text('status'), // raw ESPN status.type.name, e.g. 'STATUS_FINAL'

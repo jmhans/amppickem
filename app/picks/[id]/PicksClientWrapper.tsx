@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { getWeekBoardData, setPick, removePick } from '@/app/lib/actions';
+import { getWeekBoardData, setPick, removePick, setGamePickLock } from '@/app/lib/actions';
 import WeekBoard, { type BoardGame, type BoardPick } from './WeekBoard';
 import PickCounter from './PickCounter';
 import CommissionerExport from './CommissionerExport';
@@ -14,6 +14,7 @@ export default function PicksClientWrapper({
   weeks,
   initialWeek,
   canEdit,
+  isAdminUser,
 }: {
   participantId: number;
   seasonId: number;
@@ -21,6 +22,7 @@ export default function PicksClientWrapper({
   weeks: number[];
   initialWeek: number;
   canEdit: boolean;
+  isAdminUser: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -74,6 +76,17 @@ export default function PicksClientWrapper({
     }
   }
 
+  async function handleToggleLock(gameId: number, currentlyLocked: boolean) {
+    if (!isAdminUser) return;
+    const nextLocked = !currentlyLocked;
+    const result = await setGamePickLock(gameId, nextLocked);
+    if (result.success) {
+      setGames((prev) => prev.map((g) => (g.id === gameId ? { ...g, pickLockOverride: nextLocked } : g)));
+    } else {
+      setError(result.error ?? 'Failed to update lock');
+    }
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -101,8 +114,10 @@ export default function PicksClientWrapper({
           games={games}
           picks={picks}
           canEdit={canEdit}
+          isAdminUser={isAdminUser}
           savingKey={savingKey}
           onPick={handlePick}
+          onToggleLock={handleToggleLock}
         />
       )}
     </div>

@@ -1,6 +1,7 @@
 import { auth0 } from '@/app/lib/auth0';
 import { getParticipants, getOrCreateActiveSeason, getStandings } from '@/app/lib/actions';
 import StandingsTable from './StandingsTable';
+import RefreshResultsButton from './RefreshResultsButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,10 +34,15 @@ export default async function ParticipantsPage() {
 
   return (
     <main>
-      <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">{season.name} Standings</h1>
-      <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-        Unclaimed entries can be claimed by any logged-in user.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">{season.name} Standings</h1>
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+            Unclaimed entries can be claimed by any logged-in user.
+          </p>
+        </div>
+        {session?.user && <RefreshResultsButton />}
+      </div>
 
       <div className="mt-5">
         <StandingsTable rows={rows} isLoggedIn={!!session?.user} />

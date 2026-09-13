@@ -1,0 +1,1 @@
+ALTER TABLE "amppickem"."games" ADD COLUMN "pick_lock_override" boolean;

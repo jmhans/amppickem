@@ -26,7 +26,8 @@ export default async function PicksPage({
   const resolvedSearchParams = (await searchParams) ?? {};
   const week = resolvedSearchParams.week ? Number(resolvedSearchParams.week) : season.firstWeek;
 
-  const canEdit = participant.auth0Id === session.user.sub || isAdmin(session.user);
+  const isAdminUser = isAdmin(session.user);
+  const canEdit = participant.auth0Id === session.user.sub || isAdminUser;
 
   return (
     <main>
@@ -52,6 +53,7 @@ export default async function PicksPage({
         weeks={Array.from({ length: season.lastWeek - season.firstWeek + 1 }, (_, i) => season.firstWeek + i)}
         initialWeek={week}
         canEdit={canEdit}
+        isAdminUser={isAdminUser}
       />
     </main>
   );
