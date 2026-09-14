@@ -33,6 +33,15 @@ export async function generatePicksWorkbook(
   const sheet = wb.getWorksheet('Sheet1');
   if (!sheet) throw new Error('Template is missing Sheet1');
 
+  // The template has a leftover defined name ("team_map_no_initials") pointing at an
+  // EXTERNAL workbook reference (e.g. '[1]TeamMap'!...) from the commissioner's own tooling —
+  // unused by anything we generate. exceljs doesn't round-trip the external-link machinery
+  // that backs it (xl/externalLinks/*, the <externalReferences> element) on write, but leaves
+  // the dangling "[1]" token in the defined name itself. That mismatch is exactly what made
+  // Excel flag the emailed file as needing repair. Strip any defined name that still
+  // references an external workbook before writing.
+  wb.definedNames.model = wb.definedNames.model.filter((dn) => !dn.ranges.some((r) => r.includes('[')));
+
   sheet.getCell('B4').value = `${seasonYear} NFL Season: Week ${week}`;
 
   weekGames.forEach((g, i) => {
