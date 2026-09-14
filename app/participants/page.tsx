@@ -7,7 +7,6 @@ import {
   getSeasonStandings,
 } from '@/app/lib/actions';
 import StandingsTabs from './StandingsTabs';
-import RefreshResultsButton from './RefreshResultsButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,14 +29,11 @@ export default async function ParticipantsPage() {
 
   return (
     <main>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">{season.name} Standings</h1>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-            Unclaimed entries can be claimed by any logged-in user.
-          </p>
-        </div>
-        {session?.user && <RefreshResultsButton />}
+      <div>
+        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">{season.name} Standings</h1>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+          Unclaimed entries can be claimed by any logged-in user.
+        </p>
       </div>
 
       <div className="mt-5">
@@ -46,7 +42,7 @@ export default async function ParticipantsPage() {
           weeks={weeks}
           initialWeek={initialWeek}
           initialWeeklyRows={weeklyRows}
-          seasonRows={seasonRows}
+          initialSeasonRows={seasonRows}
           claimedIds={claimedIds}
           myParticipantId={myParticipant?.id ?? null}
           isLoggedIn={!!session?.user}
