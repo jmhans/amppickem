@@ -45,10 +45,26 @@ function selectedClasses(result: BoardPick['result'] | undefined): string {
   }
 }
 
+/** The side that actually covered/hit, independent of who picked it — null until the game is final and scored. */
+function spreadWinningSide(game: BoardGame): 'home' | 'away' | 'push' | null {
+  if (!game.isFinal || game.homeScore == null || game.awayScore == null || game.spread == null) return null;
+  const margin = game.homeScore + game.spread - game.awayScore;
+  if (margin === 0) return 'push';
+  return margin > 0 ? 'home' : 'away';
+}
+
+function totalWinningSide(game: BoardGame): 'over' | 'under' | 'push' | null {
+  if (!game.isFinal || game.homeScore == null || game.awayScore == null || game.overUnder == null) return null;
+  const total = game.homeScore + game.awayScore;
+  if (total === game.overUnder) return 'push';
+  return total > game.overUnder ? 'over' : 'under';
+}
+
 function MiniPickButton({
   label,
   selected,
   result,
+  highlightAsWinner,
   disabled,
   saving,
   onClick,
@@ -56,6 +72,7 @@ function MiniPickButton({
   label: string;
   selected: boolean;
   result?: BoardPick['result'];
+  highlightAsWinner?: boolean;
   disabled: boolean;
   saving: boolean;
   onClick: () => void;
@@ -69,7 +86,7 @@ function MiniPickButton({
         selected
           ? selectedClasses(result)
           : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
-      }`}
+      } ${!selected && highlightAsWinner ? 'ring-2 ring-inset ring-green-500 dark:ring-green-400' : ''}`}
     >
       {saving ? '…' : label}
     </button>
@@ -99,6 +116,9 @@ export default function GameCard({
   // explicit unlock toggle below, which flips this to false before any pick can be edited.
   const locked = isPickLocked(game);
   const disabledByLock = locked;
+
+  const spreadWinner = spreadWinningSide(game);
+  const totalWinner = totalWinningSide(game);
 
   return (
     <div className="flex w-[180px] shrink-0 snap-start flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2.5 shadow-sm">
@@ -140,6 +160,7 @@ export default function GameCard({
             label={game.spread != null ? `${game.awayTeam} ${formatSpread(false, game.spread)}` : `${game.awayTeam} -`}
             selected={spreadPick?.selection === 'away'}
             result={spreadPick?.result}
+            highlightAsWinner={spreadWinner === 'away'}
             disabled={!canEdit || disabledByLock || game.spread == null}
             saving={savingKey === `${game.id}-spread`}
             onClick={() => onPick(game.id, 'spread', 'away')}
@@ -148,6 +169,7 @@ export default function GameCard({
             label={game.spread != null ? `${game.homeTeam} ${formatSpread(true, game.spread)}` : `${game.homeTeam} -`}
             selected={spreadPick?.selection === 'home'}
             result={spreadPick?.result}
+            highlightAsWinner={spreadWinner === 'home'}
             disabled={!canEdit || disabledByLock || game.spread == null}
             saving={savingKey === `${game.id}-spread`}
             onClick={() => onPick(game.id, 'spread', 'home')}
@@ -162,6 +184,7 @@ export default function GameCard({
             label={game.overUnder != null ? `O ${game.overUnder}` : 'O -'}
             selected={totalPick?.selection === 'over'}
             result={totalPick?.result}
+            highlightAsWinner={totalWinner === 'over'}
             disabled={!canEdit || disabledByLock || game.overUnder == null}
             saving={savingKey === `${game.id}-over_under`}
             onClick={() => onPick(game.id, 'over_under', 'over')}
@@ -170,6 +193,7 @@ export default function GameCard({
             label={game.overUnder != null ? `U ${game.overUnder}` : 'U -'}
             selected={totalPick?.selection === 'under'}
             result={totalPick?.result}
+            highlightAsWinner={totalWinner === 'under'}
             disabled={!canEdit || disabledByLock || game.overUnder == null}
             saving={savingKey === `${game.id}-over_under`}
             onClick={() => onPick(game.id, 'over_under', 'under')}
