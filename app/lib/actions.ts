@@ -5,7 +5,7 @@ import { participants, seasons, games, picks, systemSettings, payoutTiers, type 
 import { eq, and, isNotNull, asc, sql, lte } from 'drizzle-orm';
 import { auth0 } from '@/app/lib/auth0';
 import { isAdmin } from '@/app/lib/auth-utils';
-import { gradePick } from '@/app/lib/grading';
+import { gradePick, gradeSpreadPick, gradeTotalPick } from '@/app/lib/grading';
 import { isPickLocked } from '@/app/lib/pick-lock';
 import { syncWeekGames } from '@/app/lib/espn-api';
 import { computeLockThresholdFromEarliestGame } from '@/app/lib/lines-lock';
@@ -661,4 +661,92 @@ export async function getPicksExportData(participantId: number, seasonId: number
   });
 
   return { participant, exportGames };
+}
+
+// --- Pick board (everyone's picks for a week, once lines are locked) ---
+
+export interface BoardPickEntry {
+  participantId: number;
+  name: string;
+}
+
+export interface BoardGameRow {
+  id: number;
+  gameTime: Date | null;
+  awayTeam: string;
+  homeTeam: string;
+  spread: number | null;
+  overUnder: number | null;
+  homeScore: number | null;
+  awayScore: number | null;
+  isFinal: boolean;
+  // The side that actually covered/hit, once final — not tied to who picked what, so a side
+  // with zero picks still colors correctly. null until the game is final and scored.
+  spreadWinner: 'home' | 'away' | 'push' | null;
+  totalWinner: 'over' | 'under' | 'push' | null;
+  // awayScore - homeScore and awayScore + homeScore, once final — lets the board show "how far
+  // off the line the actual result landed" at a glance, matching the commissioner's sheet.
+  actualMargin: number | null;
+  actualTotal: number | null;
+  awayPicks: BoardPickEntry[];
+  homePicks: BoardPickEntry[];
+  underPicks: BoardPickEntry[];
+  overPicks: BoardPickEntry[];
+}
+
+/** Everyone's picks for one week, games in kickoff order — only locked (visible) games, matching what participants could actually see when picking. */
+export async function getBoardData(seasonId: number, week: number): Promise<BoardGameRow[]> {
+  const [weekGames, weekPicks] = await Promise.all([
+    getWeekGamesForPicking(seasonId, week),
+    db
+      .select({
+        gameId: picks.gameId,
+        pickType: picks.pickType,
+        selection: picks.selection,
+        participantId: picks.participantId,
+        name: participants.name,
+      })
+      .from(picks)
+      .innerJoin(participants, eq(picks.participantId, participants.id))
+      .where(and(eq(picks.seasonId, seasonId), eq(picks.week, week))),
+  ]);
+
+  return weekGames.map((g) => {
+    const gamePicks = weekPicks.filter((p) => p.gameId === g.id);
+    const entry = (participantId: number, name: string): BoardPickEntry => ({ participantId, name });
+
+    const scored = g.isFinal && g.homeScore != null && g.awayScore != null;
+
+    let spreadWinner: BoardGameRow['spreadWinner'] = null;
+    if (scored && g.spread != null) {
+      const grade = gradeSpreadPick('home', g.spread, g.homeScore!, g.awayScore!);
+      spreadWinner = grade === 'push' ? 'push' : grade === 'win' ? 'home' : 'away';
+    }
+
+    let totalWinner: BoardGameRow['totalWinner'] = null;
+    if (scored && g.overUnder != null) {
+      const grade = gradeTotalPick('over', g.overUnder, g.homeScore!, g.awayScore!);
+      totalWinner = grade === 'push' ? 'push' : grade === 'win' ? 'over' : 'under';
+    }
+
+    return {
+      id: g.id,
+      gameTime: g.gameTime,
+      awayTeam: g.awayTeam,
+      homeTeam: g.homeTeam,
+      spread: g.spread,
+      overUnder: g.overUnder,
+      homeScore: g.homeScore,
+      awayScore: g.awayScore,
+      isFinal: g.isFinal,
+      spreadWinner,
+      totalWinner,
+      actualMargin: scored ? g.awayScore! - g.homeScore! : null,
+      actualTotal: scored ? g.awayScore! + g.homeScore! : null,
+      awayPicks: gamePicks.filter((p) => p.pickType === 'spread' && p.selection === 'away').map((p) => entry(p.participantId, p.name)),
+      homePicks: gamePicks.filter((p) => p.pickType === 'spread' && p.selection === 'home').map((p) => entry(p.participantId, p.name)),
+      underPicks: gamePicks.filter((p) => p.pickType === 'over_under' && p.selection === 'under').map((p) => entry(p.participantId, p.name)),
+      overPicks: gamePicks.filter((p) => p.pickType === 'over_under' && p.selection === 'over').map((p) => entry(p.participantId, p.name)),
+    };
+  });
 }
