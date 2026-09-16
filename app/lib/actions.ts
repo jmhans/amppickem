@@ -98,7 +98,8 @@ export async function getParticipantsByAuth0Id(auth0Id: string) {
     return await db
       .select()
       .from(participants)
-      .where(eq(participants.auth0Id, auth0Id));
+      .where(and(eq(participants.auth0Id, auth0Id), eq(participants.isActive, true)))
+      .orderBy(asc(participants.createdAt));
   } catch (error) {
     console.error('Failed to fetch participants:', error);
     return [];
