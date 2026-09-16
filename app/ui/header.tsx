@@ -6,6 +6,7 @@ import { useUser } from '@auth0/nextjs-auth0/client';
 import { isAdmin } from '@/app/lib/auth-utils';
 import { getParticipantsByAuth0Id } from '@/app/lib/actions';
 import UserDisplay from './user-display';
+import FeedbackButton from './feedback-button';
 import { lusitana } from '@/app/ui/fonts';
 
 export default function Header() {
@@ -91,6 +92,7 @@ export default function Header() {
                   >
                     About
                   </Link>
+                  <FeedbackButton onTriggerClick={() => setMenuOpen(false)} />
                   {user && isAdmin(user) && (
                     <Link
                       href="/admin"
