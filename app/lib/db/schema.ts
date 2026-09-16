@@ -125,6 +125,25 @@ export const picks = ampPickemSchema.table('picks', {
   index('picks_game_idx').on(t.gameId),
 ]);
 
+// The commissioner hand-builds a new pickem template most weeks (game order reshuffled,
+// a fresh quip in the header, etc.) — see app/lib/xlsx-export.ts. An admin uploads that
+// week's file here; export/email falls back to the static default template
+// (app/lib/templates/pickem-template.xlsx) for any week with no row. Stored as base64 text
+// rather than a real bytea column — these files are tiny (tens of KB) and every other
+// column in this schema is already a plain scalar type, so this avoids pulling in
+// drizzle's customType machinery for a one-off.
+export const weekTemplates = ampPickemSchema.table('week_templates', {
+  id: serial('id').primaryKey(),
+  seasonId: integer('season_id').notNull().references(() => seasons.id, { onDelete: 'cascade' }),
+  week: integer('week').notNull(),
+  fileName: text('file_name').notNull(),
+  fileData: text('file_data').notNull(), // base64-encoded xlsx bytes
+  uploadedBy: text('uploaded_by'), // admin's session name/email, best-effort
+  uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
+}, (t) => [
+  unique('week_templates_season_week_uniq').on(t.seasonId, t.week),
+]);
+
 export const systemSettings = ampPickemSchema.table('system_settings', {
   id: serial('id').primaryKey(),
   key: text('key').notNull().unique(), // e.g. 'last_lines_sync', 'last_grade_run'

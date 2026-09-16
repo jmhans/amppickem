@@ -1,15 +1,10 @@
 import path from 'path';
 import ExcelJS from 'exceljs';
 import { teamFullName } from '@/app/lib/team-names';
-import type { PicksExportGame } from '@/app/lib/actions';
+import { getWeekTemplateBuffer, type PicksExportGame } from '@/app/lib/actions';
+import { FIRST_GAME_ROW, LAST_GAME_ROW, MAX_GAMES } from '@/app/lib/template-layout';
 
 const TEMPLATE_PATH = path.join(process.cwd(), 'app/lib/templates/pickem-template.xlsx');
-
-// The commissioner's template has exactly 16 game rows (7-22) with the pick
-// columns K(Away)/L(Home)/M(Under)/N(Over) — see app/lib/templates/pickem-template.xlsx.
-const FIRST_GAME_ROW = 7;
-const LAST_GAME_ROW = 22;
-const MAX_GAMES = LAST_GAME_ROW - FIRST_GAME_ROW + 1;
 
 function formatGameTime(d: Date | null): string {
   if (!d) return '';
@@ -18,8 +13,9 @@ function formatGameTime(d: Date | null): string {
   return `${day}, ${time} CT`;
 }
 
-/** Builds the commissioner-format xlsx for one participant's week from the template. */
+/** Builds the commissioner-format xlsx for one participant's week from that week's template. */
 export async function generatePicksWorkbook(
+  seasonId: number,
   seasonYear: number,
   week: number,
   weekGames: PicksExportGame[],
@@ -29,7 +25,18 @@ export async function generatePicksWorkbook(
   }
 
   const wb = new ExcelJS.Workbook();
-  await wb.xlsx.readFile(TEMPLATE_PATH);
+  // Admins can upload that week's own commissioner spreadsheet (game order/quips/etc. vary
+  // week to week) — see actions.ts's uploadWeekTemplate(). Falls back to the static default
+  // template for any week nobody's uploaded one for yet.
+  const customTemplate = await getWeekTemplateBuffer(seasonId, week);
+  if (customTemplate) {
+    // exceljs's bundled ambient Buffer type conflicts with @types/node's newer generic
+    // Buffer<T> via global declaration merging — structurally fine at runtime, so `any` here.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await wb.xlsx.load(customTemplate as any);
+  } else {
+    await wb.xlsx.readFile(TEMPLATE_PATH);
+  }
   const sheet = wb.getWorksheet('Sheet1');
   if (!sheet) throw new Error('Template is missing Sheet1');
 

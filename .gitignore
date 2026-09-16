@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# real participant PII (names/emails/picks) used by scripts/*.ts — never committed
+/scripts/data/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

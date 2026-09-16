@@ -36,6 +36,13 @@ const ADMIN_CARDS = [
     color: 'orange',
     icon: <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />,
   },
+  {
+    href: '/admin/templates',
+    title: 'Week Templates',
+    description: "Upload each week's commissioner spreadsheet",
+    color: 'teal',
+    icon: <path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2zM12 3v5a1 1 0 001 1h5" />,
+  },
 ] as const;
 
 const COLOR_CLASSES: Record<string, { bg: string; text: string; hoverBg: string; hoverBorder: string; hoverText: string }> = {
@@ -43,6 +50,7 @@ const COLOR_CLASSES: Record<string, { bg: string; text: string; hoverBg: string;
   green: { bg: 'bg-green-100', text: 'text-green-600', hoverBg: 'group-hover:bg-green-600', hoverBorder: 'hover:border-green-500', hoverText: 'group-hover:text-green-600' },
   purple: { bg: 'bg-purple-100', text: 'text-purple-600', hoverBg: 'group-hover:bg-purple-600', hoverBorder: 'hover:border-purple-500', hoverText: 'group-hover:text-purple-600' },
   orange: { bg: 'bg-orange-100', text: 'text-orange-600', hoverBg: 'group-hover:bg-orange-600', hoverBorder: 'hover:border-orange-500', hoverText: 'group-hover:text-orange-600' },
+  teal: { bg: 'bg-teal-100', text: 'text-teal-600', hoverBg: 'group-hover:bg-teal-600', hoverBorder: 'hover:border-teal-500', hoverText: 'group-hover:text-teal-600' },
 };
 
 export default async function AdminPage() {

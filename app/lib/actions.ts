@@ -1,7 +1,8 @@
 'use server';
 
+import ExcelJS from 'exceljs';
 import { db } from '@/app/lib/db';
-import { participants, seasons, games, picks, systemSettings, payoutTiers, type PickType, type PickSelection } from '@/app/lib/db/schema';
+import { participants, seasons, games, picks, systemSettings, payoutTiers, weekTemplates, type PickType, type PickSelection } from '@/app/lib/db/schema';
 import { eq, and, isNotNull, asc, sql, lte } from 'drizzle-orm';
 import { auth0 } from '@/app/lib/auth0';
 import { isAdmin } from '@/app/lib/auth-utils';
@@ -9,6 +10,8 @@ import { gradePick, gradeSpreadPick, gradeTotalPick } from '@/app/lib/grading';
 import { isPickLocked } from '@/app/lib/pick-lock';
 import { syncWeekGames } from '@/app/lib/espn-api';
 import { computeLockThresholdFromEarliestGame } from '@/app/lib/lines-lock';
+import { FIRST_GAME_ROW, LAST_GAME_ROW } from '@/app/lib/template-layout';
+import { teamAbbrevFromFullName } from '@/app/lib/team-names';
 import {
   computeParticipantWeekStats,
   computeWeeklyStandings,
@@ -661,6 +664,163 @@ export async function getPicksExportData(participantId: number, seasonId: number
   });
 
   return { participant, exportGames };
+}
+
+// --- Week templates (admin-uploaded weekly pickem spreadsheet, see xlsx-export.ts) ---
+
+export interface WeekTemplateInfo {
+  week: number;
+  fileName: string;
+  uploadedBy: string | null;
+  uploadedAt: Date;
+}
+
+/** Which weeks of this season have a custom uploaded template, most recent first. */
+export async function listWeekTemplates(seasonId: number): Promise<WeekTemplateInfo[]> {
+  const rows = await db
+    .select({
+      week: weekTemplates.week,
+      fileName: weekTemplates.fileName,
+      uploadedBy: weekTemplates.uploadedBy,
+      uploadedAt: weekTemplates.uploadedAt,
+    })
+    .from(weekTemplates)
+    .where(eq(weekTemplates.seasonId, seasonId))
+    .orderBy(asc(weekTemplates.week));
+  return rows;
+}
+
+/**
+ * Admin uploads that week's commissioner spreadsheet (FormData: seasonId, week, file).
+ * Replaces any existing template for that week. generatePicksWorkbook() only ever
+ * overwrites the fixed data cells (see xlsx-export.ts) — everything else in the uploaded
+ * file, including quips/branding/game ordering, passes through untouched. It must still
+ * keep the same "Week N" header cell and B7:N22 game-row layout as the default template,
+ * or exported picks will land in the wrong cells.
+ */
+export async function uploadWeekTemplate(formData: FormData) {
+  const auth = await requireAdmin();
+  if (!auth.ok) return { success: false, error: auth.error };
+
+  const seasonId = Number(formData.get('seasonId'));
+  const week = Number(formData.get('week'));
+  const file = formData.get('file');
+  if (!seasonId || !week || !(file instanceof File)) {
+    return { success: false, error: 'seasonId, week, and file are required' };
+  }
+
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  try {
+    const wb = new ExcelJS.Workbook();
+    // exceljs's bundled ambient Buffer type conflicts with @types/node's newer generic
+    // Buffer<T> via global declaration merging — structurally fine at runtime, so `any` here.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await wb.xlsx.load(buffer as any);
+    if (!wb.getWorksheet('Sheet1')) {
+      return { success: false, error: 'That file has no "Sheet1" tab — is this the right template?' };
+    }
+  } catch {
+    return { success: false, error: 'Not a valid .xlsx file' };
+  }
+
+  const session = await auth0.getSession();
+  const uploadedBy = session?.user?.name ?? session?.user?.email ?? null;
+
+  await db
+    .insert(weekTemplates)
+    .values({ seasonId, week, fileName: file.name, fileData: buffer.toString('base64'), uploadedBy })
+    .onConflictDoUpdate({
+      target: [weekTemplates.seasonId, weekTemplates.week],
+      set: { fileName: file.name, fileData: buffer.toString('base64'), uploadedBy, uploadedAt: new Date() },
+    });
+
+  return { success: true };
+}
+
+/** Reverts a week to the default static template. */
+export async function deleteWeekTemplate(seasonId: number, week: number) {
+  const auth = await requireAdmin();
+  if (!auth.ok) return { success: false, error: auth.error };
+
+  await db.delete(weekTemplates).where(and(eq(weekTemplates.seasonId, seasonId), eq(weekTemplates.week, week)));
+  return { success: true };
+}
+
+/** The raw uploaded template bytes for a week, if an admin has uploaded one — else null (caller falls back to the default). */
+export async function getWeekTemplateBuffer(seasonId: number, week: number): Promise<Buffer | null> {
+  const [row] = await db
+    .select({ fileData: weekTemplates.fileData })
+    .from(weekTemplates)
+    .where(and(eq(weekTemplates.seasonId, seasonId), eq(weekTemplates.week, week)))
+    .limit(1);
+  return row ? Buffer.from(row.fileData, 'base64') : null;
+}
+
+export interface TemplateLineImport {
+  gameId: number;
+  awayTeam: string;
+  homeTeam: string;
+  spread: number | null;
+  overUnder: number | null;
+}
+
+/**
+ * Reads the spread/O-U the commissioner already typed into that week's uploaded template
+ * (columns H/I of the game rows, see template-layout.ts) and matches each row back to a
+ * game via its team names, so an admin doesn't have to retype lines the template already
+ * has. Read-only — the admin lines page applies results to individual rows via the normal
+ * save. Rows whose teams don't match any game for the week (typo, bye week, etc.) are
+ * silently skipped and counted in unmatchedRows for the UI to surface.
+ */
+export async function getTemplateLinesForWeek(
+  seasonId: number,
+  week: number,
+): Promise<{ available: boolean; matched: TemplateLineImport[]; unmatchedRows: number }> {
+  const auth = await requireAdmin();
+  if (!auth.ok) throw new Error(auth.error);
+
+  const buffer = await getWeekTemplateBuffer(seasonId, week);
+  if (!buffer) return { available: false, matched: [], unmatchedRows: 0 };
+
+  const wb = new ExcelJS.Workbook();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await wb.xlsx.load(buffer as any);
+  const sheet = wb.getWorksheet('Sheet1');
+  if (!sheet) return { available: false, matched: [], unmatchedRows: 0 };
+
+  const weekGames = await getGamesForWeek(seasonId, week);
+  const gameByMatchup = new Map(weekGames.map((g) => [`${g.awayTeam}@${g.homeTeam}`, g]));
+
+  const matched: TemplateLineImport[] = [];
+  let unmatchedRows = 0;
+
+  for (let row = FIRST_GAME_ROW; row <= LAST_GAME_ROW; row++) {
+    const awayCell = sheet.getCell(`E${row}`).value;
+    const homeCell = sheet.getCell(`G${row}`).value;
+    if (!awayCell || !homeCell) continue; // blank trailing row
+
+    const awayAbbrev = teamAbbrevFromFullName(String(awayCell));
+    const homeAbbrev = teamAbbrevFromFullName(String(homeCell));
+    const game = awayAbbrev && homeAbbrev ? gameByMatchup.get(`${awayAbbrev}@${homeAbbrev}`) : undefined;
+    if (!game) {
+      unmatchedRows++;
+      continue;
+    }
+
+    const spreadCell = sheet.getCell(`H${row}`).value;
+    const overUnderCell = sheet.getCell(`I${row}`).value;
+    matched.push({
+      gameId: game.id,
+      awayTeam: game.awayTeam,
+      homeTeam: game.homeTeam,
+      spread: typeof spreadCell === 'number' ? spreadCell : null,
+      overUnder: typeof overUnderCell === 'number' ? overUnderCell : null,
+    });
+  }
+
+  return { available: true, matched, unmatchedRows };
 }
 
 // --- Pick board (everyone's picks for a week, once lines are locked) ---

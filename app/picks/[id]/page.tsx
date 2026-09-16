@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { auth0 } from '@/app/lib/auth0';
 import { isAdmin } from '@/app/lib/auth-utils';
-import { getParticipantById, getOrCreateActiveSeason } from '@/app/lib/actions';
+import { getParticipantById, getOrCreateActiveSeason, getLatestStandingsWeek } from '@/app/lib/actions';
 import PicksClientWrapper from './PicksClientWrapper';
 
 export const dynamic = 'force-dynamic';
@@ -24,7 +24,7 @@ export default async function PicksPage({
 
   const season = await getOrCreateActiveSeason();
   const resolvedSearchParams = (await searchParams) ?? {};
-  const week = resolvedSearchParams.week ? Number(resolvedSearchParams.week) : season.firstWeek;
+  const week = resolvedSearchParams.week ? Number(resolvedSearchParams.week) : await getLatestStandingsWeek(season.id);
 
   const isAdminUser = isAdmin(session.user);
   const canEdit = participant.auth0Id === session.user.sub || isAdminUser;

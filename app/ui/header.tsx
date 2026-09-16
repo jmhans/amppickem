@@ -1,15 +1,27 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useUser } from '@auth0/nextjs-auth0/client';
 import { isAdmin } from '@/app/lib/auth-utils';
+import { getParticipantsByAuth0Id } from '@/app/lib/actions';
 import UserDisplay from './user-display';
 import { lusitana } from '@/app/ui/fonts';
 
 export default function Header() {
   const { user } = useUser();
   const [menuOpen, setMenuOpen] = useState(false);
+  // Just the first entry, matching "My Picks" being a single link — a user with
+  // multiple entries still gets the full list via UserDisplay's "My Entries".
+  const [myPicksParticipantId, setMyPicksParticipantId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (user?.sub) {
+      getParticipantsByAuth0Id(user.sub).then((participants) => {
+        setMyPicksParticipantId(participants[0]?.id ?? null);
+      });
+    }
+  }, [user?.sub]);
 
   return (
     <div className="flex h-20 shrink-0 items-center justify-between rounded-lg bg-blue-500 dark:bg-blue-600 px-4 md:h-24 mb-6">
@@ -56,12 +68,21 @@ export default function Header() {
                   >
                     Standings
                   </Link>
+                  {myPicksParticipantId != null && (
+                    <Link
+                      href={`/picks/${myPicksParticipantId}`}
+                      className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      My Picks
+                    </Link>
+                  )}
                   <Link
                     href="/board"
                     className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
                     onClick={() => setMenuOpen(false)}
                   >
-                    Pick Board
+                    Pick Results Board
                   </Link>
                   <Link
                     href="/about"

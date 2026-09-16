@@ -38,3 +38,12 @@ export const NFL_TEAM_NAMES: Record<string, string> = {
 export function teamFullName(abbrev: string): string {
   return NFL_TEAM_NAMES[abbrev] ?? abbrev;
 }
+
+const FULL_NAME_TO_ABBREV: Record<string, string> = Object.fromEntries(
+  Object.entries(NFL_TEAM_NAMES).map(([abbrev, fullName]) => [fullName, abbrev]),
+);
+
+/** Inverse of teamFullName() — used to match a template's team names back to games.homeTeam/awayTeam. */
+export function teamAbbrevFromFullName(fullName: string): string | undefined {
+  return FULL_NAME_TO_ABBREV[fullName.trim()];
+}

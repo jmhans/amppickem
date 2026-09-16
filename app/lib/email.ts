@@ -29,6 +29,7 @@ export async function sendPicksEmailToCommissioner(opts: {
   await getTransporter().sendMail({
     from: process.env.GMAIL_USER,
     to: commissionerEmail,
+    cc: opts.participantEmail ?? undefined,
     replyTo: opts.participantEmail ?? undefined,
     subject: `NFL Picks — ${opts.seasonYear} Week ${opts.week} — ${opts.participantName}`,
     text: `${opts.participantName}'s picks for Week ${opts.week} are attached.\n\nSent from AMP Pick'em.`,

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { getTemplateLinesForWeek } from '@/app/lib/actions';
 
 type Game = {
   id: number;
@@ -23,6 +24,7 @@ export default function LinesManager({ weeks, initialWeek }: { weeks: number[]; 
   const week = Number(searchParams.get('week')) || initialWeek;
 
   const [games, setGames] = useState<Game[]>([]);
+  const [seasonId, setSeasonId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -33,6 +35,7 @@ export default function LinesManager({ weeks, initialWeek }: { weeks: number[]; 
     const res = await fetch(`/api/admin/lines?week=${week}`);
     const data = await res.json();
     setGames(data.games ?? []);
+    setSeasonId(data.season?.id ?? null);
     setEdits({});
     setLoading(false);
   }, [week]);
@@ -87,12 +90,57 @@ export default function LinesManager({ weeks, initialWeek }: { weeks: number[]; 
     const edit = edits[gameId];
     if (!edit) return;
     startTransition(async () => {
-      await fetch('/api/admin/lines', {
+      const res = await fetch('/api/admin/lines', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ gameId, spread: edit.spread, overUnder: edit.overUnder }),
       });
-      load();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        setMessage(data.error ?? 'Failed to save line');
+        return;
+      }
+      // Merge the saved row into state locally instead of refetching the whole week —
+      // a full reload would wipe every OTHER row's still-unsaved edit, which is exactly
+      // what makes entering a batch of lines painful.
+      setGames((prev) => prev.map((g) => (
+        g.id === gameId
+          ? { ...g, spread: edit.spread === '' ? null : Number(edit.spread), overUnder: edit.overUnder === '' ? null : Number(edit.overUnder) }
+          : g
+      )));
+      setEdits((prev) => {
+        const next = { ...prev };
+        delete next[gameId];
+        return next;
+      });
+    });
+  }
+
+  function handleImportFromTemplate() {
+    if (!seasonId) return;
+    setMessage(null);
+    startTransition(async () => {
+      const result = await getTemplateLinesForWeek(seasonId, week);
+      if (!result.available) {
+        setMessage(`No template uploaded for week ${week} yet — upload one under Admin > Week Templates first.`);
+        return;
+      }
+      if (result.matched.length === 0) {
+        setMessage('Template found, but none of its rows matched a synced game for this week.');
+        return;
+      }
+      setEdits((prev) => {
+        const next = { ...prev };
+        for (const m of result.matched) {
+          next[m.gameId] = { spread: m.spread != null ? String(m.spread) : '', overUnder: m.overUnder != null ? String(m.overUnder) : '' };
+        }
+        return next;
+      });
+      setMessage(
+        `Imported ${result.matched.length} line${result.matched.length === 1 ? '' : 's'} from the week ${week} template` +
+        (result.unmatchedRows > 0 ? ` (${result.unmatchedRows} row${result.unmatchedRows === 1 ? '' : 's'} didn't match a synced game).` : '.') +
+        ' Review below, then Save each row.',
+      );
     });
   }
 
@@ -118,6 +166,14 @@ export default function LinesManager({ weeks, initialWeek }: { weeks: number[]; 
           className="flex h-10 items-center rounded-lg bg-green-600 px-4 text-sm font-medium text-white transition-colors hover:bg-green-500 disabled:opacity-50"
         >
           Sync from ESPN
+        </button>
+
+        <button
+          onClick={handleImportFromTemplate}
+          disabled={isPending || !seasonId}
+          className="flex h-10 items-center rounded-lg bg-teal-600 px-4 text-sm font-medium text-white transition-colors hover:bg-teal-500 disabled:opacity-50"
+        >
+          Import from Template
         </button>
 
         {!allLocked && (

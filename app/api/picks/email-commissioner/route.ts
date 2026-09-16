@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const { participant, exportGames } = await getPicksExportData(participantId, activeSeason.id, week);
-    const buffer = await generatePicksWorkbook(activeSeason.year, week, exportGames);
+    const buffer = await generatePicksWorkbook(activeSeason.id, activeSeason.year, week, exportGames);
     const filename = buildExportFilename(activeSeason.year, week, participant.name);
 
     await sendPicksEmailToCommissioner({
