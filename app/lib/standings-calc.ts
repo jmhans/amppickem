@@ -216,14 +216,23 @@ export function computeSeasonStandings(
     for (const id of ids) weeklyWinsByParticipant.set(id, (weeklyWinsByParticipant.get(id) ?? 0) + 1);
   }
 
-  const skinsPoolTotal = payoutConfig.weeklyPotPerWeek * payoutConfig.numWeeksInSeason;
-  const sharePerSkin = totalSkinsAwarded > 0 ? skinsPoolTotal / totalSkinsAwarded : 0;
+  // Only ante in $weeklyPotPerWeek for each week actually completed so far — not the full
+  // season's worth — so early-season "Cur Won $" doesn't divide up money from weeks that
+  // haven't been played yet (e.g. Week 1's two winners split just that week's $20, $10 each,
+  // not a full-season pool none of it has actually been anted for yet).
+  const skinsPoolThroughUptoWeek = payoutConfig.weeklyPotPerWeek * skinsThroughUptoWeek.length;
+  const sharePerSkin = totalSkinsAwarded > 0 ? skinsPoolThroughUptoWeek / totalSkinsAwarded : 0;
 
   const maxLostPicks = Math.max(0, ...current.map((r) => r.totals.lostPicks));
   const lostPicksLeaders = maxLostPicks > 0 ? current.filter((r) => r.totals.lostPicks === maxLostPicks) : [];
   const lostPicksSharePerLeader = lostPicksLeaders.length > 0 ? payoutConfig.lostPicksPrizeAmount / lostPicksLeaders.length : 0;
 
-  const remainderPool = payoutConfig.entryFee * participantIds.length - skinsPoolTotal - payoutConfig.lostPicksPrizeAmount;
+  // Unlike skinsPoolThroughUptoWeek above, this is the FULL season's skins budget — entry
+  // fees are collected upfront for the whole year, so the tier-payout remainder pool must
+  // subtract what's reserved for skins across all numWeeksInSeason weeks, not just the ones
+  // played so far.
+  const fullSeasonSkinsPool = payoutConfig.weeklyPotPerWeek * payoutConfig.numWeeksInSeason;
+  const remainderPool = payoutConfig.entryFee * participantIds.length - fullSeasonSkinsPool - payoutConfig.lostPicksPrizeAmount;
   const sortedTiers = [...payoutConfig.tiers].sort((a, b) => a.rank - b.rank);
   // Group participants by rank so a tied rank spanning multiple tier rows splits the summed percentage evenly.
   const rankGroups = new Map<number, number[]>();

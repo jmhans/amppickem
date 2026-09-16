@@ -102,7 +102,7 @@ export default function SeasonStandingsTable({
               <span>{record(row)}</span>
               <span>GB {formatGB(row.gamesBack)}</span>
               <span>{row.lostPicks} lost</span>
-              <span>{row.weeklyWins} skin{row.weeklyWins === 1 ? '' : 's'}</span>
+              <span>{row.weeklyWins} week{row.weeklyWins === 1 ? '' : 's'} won</span>
               <span className="font-medium text-green-700 dark:text-green-400">{formatDollars(row.curWonDollars)}</span>
             </div>
             {!claimedIds.has(row.participantId) && isLoggedIn && (
@@ -132,7 +132,7 @@ export default function SeasonStandingsTable({
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Lost Picks</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">GB</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">G/L</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Skins</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Weeks Won</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Cur Won $</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300"></th>
             </tr>
