@@ -6,12 +6,13 @@ import { useUser } from '@auth0/nextjs-auth0/client';
 import { isAdmin } from '@/app/lib/auth-utils';
 import { getParticipantsByAuth0Id } from '@/app/lib/actions';
 import UserDisplay from './user-display';
-import FeedbackButton from './feedback-button';
+import FeedbackModal from './feedback-modal';
 import { lusitana } from '@/app/ui/fonts';
 
 export default function Header() {
   const { user } = useUser();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   // Just the first entry, matching "My Picks" being a single link — a user with
   // multiple entries still gets the full list via UserDisplay's "My Entries".
   const [myPicksParticipantId, setMyPicksParticipantId] = useState<number | null>(null);
@@ -92,7 +93,13 @@ export default function Header() {
                   >
                     About
                   </Link>
-                  <FeedbackButton onTriggerClick={() => setMenuOpen(false)} />
+                  <button
+                    onClick={() => { setFeedbackOpen(true); setMenuOpen(false); }}
+                    className="block w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    role="menuitem"
+                  >
+                    Feedback
+                  </button>
                   {user && isAdmin(user) && (
                     <Link
                       href="/admin"
@@ -108,6 +115,8 @@ export default function Header() {
           )}
         </div>
       </div>
+
+      <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </div>
   );
 }

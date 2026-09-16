@@ -12,10 +12,16 @@ interface Issue {
 
 type SubmitState = 'idle' | 'submitting' | 'success' | 'error';
 
-/** Dropdown-menu-row trigger + modal for filing a bug/feature request as a GitHub issue — same pattern as fgt2/ABL's feedback workflow. */
-export default function FeedbackButton({ onTriggerClick }: { onTriggerClick?: () => void }) {
+/**
+ * Modal for filing a bug/feature request as a GitHub issue — same pattern as fgt2/ABL's
+ * feedback workflow. Controlled (`open`/`onClose`) and must stay mounted independent of
+ * whatever triggers it — e.g. header.tsx's hamburger dropdown unmounts its contents when
+ * it closes, so if this component owned its own open state and lived inside that dropdown,
+ * closing the dropdown on click (to open the modal) would unmount the modal before it
+ * could ever render.
+ */
+export default function FeedbackModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user } = useUser();
-  const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [submitState, setSubmitState] = useState<SubmitState>('idle');
@@ -45,7 +51,7 @@ export default function FeedbackButton({ onTriggerClick }: { onTriggerClick?: ()
   }
 
   function close() {
-    setOpen(false);
+    onClose();
     setTimeout(resetForm, 300);
   }
 
@@ -72,20 +78,9 @@ export default function FeedbackButton({ onTriggerClick }: { onTriggerClick?: ()
     }
   }
 
-  return (
-    <>
-      <button
-        onClick={() => {
-          setOpen(true);
-          onTriggerClick?.();
-        }}
-        className="block w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-        role="menuitem"
-      >
-        Feedback
-      </button>
+  if (!open) return null;
 
-      {open && (
+  return (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
           onClick={(e) => { if (e.target === e.currentTarget) close(); }}
@@ -195,7 +190,5 @@ export default function FeedbackButton({ onTriggerClick }: { onTriggerClick?: ()
             </div>
           </div>
         </div>
-      )}
-    </>
   );
 }
