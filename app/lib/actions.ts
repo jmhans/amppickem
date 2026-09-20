@@ -1,11 +1,13 @@
 'use server';
 
 import ExcelJS from 'exceljs';
+import { cookies } from 'next/headers';
 import { db } from '@/app/lib/db';
 import { participants, seasons, games, picks, systemSettings, payoutTiers, weekTemplates, type PickType, type PickSelection } from '@/app/lib/db/schema';
 import { eq, and, isNotNull, asc, sql, lte } from 'drizzle-orm';
 import { auth0 } from '@/app/lib/auth0';
 import { isAdmin } from '@/app/lib/auth-utils';
+import { isEffectiveAdmin, ADMIN_MODE_COOKIE } from '@/app/lib/admin-mode';
 import { gradePick, gradeSpreadPick, gradeTotalPick } from '@/app/lib/grading';
 import { isPickLocked } from '@/app/lib/pick-lock';
 import { syncWeekGames } from '@/app/lib/espn-api';
@@ -195,7 +197,9 @@ export async function requireCanEditParticipant(participantId: number) {
   const participant = await getParticipantById(participantId);
   if (!participant) return { ok: false as const, error: 'Participant not found' };
 
-  const admin = isAdmin(session.user);
+  // Admin-editing-someone-else's-picks only kicks in with Admin Mode on (see admin-mode.ts) —
+  // an admin with the mode off can only edit their own entry, same as any other participant.
+  const admin = await isEffectiveAdmin(session.user);
   const canEdit = participant.auth0Id === session.user.sub || admin;
   if (!canEdit) return { ok: false as const, error: "That's not your picks to edit" };
 
@@ -296,13 +300,33 @@ export async function setGamePickLock(gameId: number, locked: boolean) {
   return { success: true };
 }
 
-/** Combined fetch for the picks UI — this week's pickable games plus this participant's existing picks. */
+/**
+ * Combined fetch for the picks UI — this week's pickable games plus this participant's
+ * existing picks. The viewer only sees the FULL pick list when it's their own entry (or
+ * they're admin); otherwise picks for games that haven't kicked off yet (per isPickLocked)
+ * are withheld, same as they'd be blank on the pick board. Viewer identity is derived from
+ * the session server-side, not trusted from the caller — this is a public server action.
+ */
 export async function getWeekBoardData(participantId: number, seasonId: number, week: number) {
-  const [weekGames, weekPicks] = await Promise.all([
+  const [weekGames, weekPicks, session, participant] = await Promise.all([
     getWeekGamesForPicking(seasonId, week),
     getPicksForParticipantWeek(participantId, seasonId, week),
+    auth0.getSession(),
+    getParticipantById(participantId),
   ]);
-  return { games: weekGames, picks: weekPicks };
+
+  const isOwner = !!session?.user?.sub && participant?.auth0Id === session.user.sub;
+  const canSeeAll = isOwner || (await isEffectiveAdmin(session?.user));
+  if (canSeeAll) {
+    return { games: weekGames, picks: weekPicks };
+  }
+
+  const gameById = new Map(weekGames.map((g) => [g.id, g]));
+  const visiblePicks = weekPicks.filter((p) => {
+    const game = gameById.get(p.gameId);
+    return game ? isPickLocked(game) : false;
+  });
+  return { games: weekGames, picks: visiblePicks };
 }
 
 // --- Grading + standings ---
@@ -518,6 +542,29 @@ async function requireAdmin() {
   const session = await auth0.getSession();
   if (!session?.user || !isAdmin(session.user)) return { ok: false as const, error: 'Admins only' };
   return { ok: true as const };
+}
+
+// --- Admin Mode toggle (see admin-mode.ts) ---
+
+/** Whether Admin Mode is currently on for the logged-in admin — false for anyone else. */
+export async function getAdminMode(): Promise<boolean> {
+  const session = await auth0.getSession();
+  return isEffectiveAdmin(session?.user);
+}
+
+/** Flips the Admin Mode cookie — re-checks real adminship server-side, ignoring whatever the client claims. */
+export async function setAdminMode(on: boolean) {
+  const session = await auth0.getSession();
+  if (!session?.user || !isAdmin(session.user)) {
+    return { success: false, error: 'Admins only' };
+  }
+  const store = await cookies();
+  store.set(ADMIN_MODE_COOKIE, on ? 'on' : 'off', {
+    path: '/',
+    sameSite: 'lax',
+    maxAge: 60 * 60 * 24 * 365,
+  });
+  return { success: true };
 }
 
 export async function getGamesForWeek(seasonId: number, week: number) {
@@ -854,7 +901,13 @@ export interface BoardGameRow {
   overPicks: BoardPickEntry[];
 }
 
-/** Everyone's picks for one week, games in kickoff order — only locked (visible) games, matching what participants could actually see when picking. */
+/**
+ * Everyone's picks for one week, games in kickoff order — only locked (visible) games,
+ * matching what participants could actually see when picking. Games that haven't kicked
+ * off yet (per isPickLocked) show zero picks/names for everyone, not just the current
+ * viewer — opponents' picks stay private until kickoff, same rule the picks page enforces
+ * for viewing someone else's entry.
+ */
 export async function getBoardData(seasonId: number, week: number): Promise<BoardGameRow[]> {
   const [weekGames, weekPicks] = await Promise.all([
     getWeekGamesForPicking(seasonId, week),
@@ -872,7 +925,7 @@ export async function getBoardData(seasonId: number, week: number): Promise<Boar
   ]);
 
   return weekGames.map((g) => {
-    const gamePicks = weekPicks.filter((p) => p.gameId === g.id);
+    const gamePicks = isPickLocked(g) ? weekPicks.filter((p) => p.gameId === g.id) : [];
     const entry = (participantId: number, name: string): BoardPickEntry => ({ participantId, name });
 
     const scored = g.isFinal && g.homeScore != null && g.awayScore != null;
