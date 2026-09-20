@@ -4,6 +4,7 @@ import { auth0 } from '@/app/lib/auth0';
 import { isEffectiveAdmin } from '@/app/lib/admin-mode';
 import { getParticipantById, getOrCreateActiveSeason, getLatestStandingsWeek } from '@/app/lib/actions';
 import PicksClientWrapper from './PicksClientWrapper';
+import ParticipantSettings from './ParticipantSettings';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,6 +46,16 @@ export default async function PicksPage({
           {participant.name} — Picks
         </h1>
       </div>
+
+      {canEdit && (
+        <ParticipantSettings
+          participantId={participantId}
+          initialName={participant.name}
+          initialEmail={participant.email ?? ''}
+          initialNotificationsEnabled={participant.notificationsEnabled}
+          initialNotificationChannel={participant.notificationChannel}
+        />
+      )}
 
       <PicksClientWrapper
         participantId={participantId}

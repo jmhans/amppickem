@@ -3,7 +3,7 @@ import { games, seasons } from '@/app/lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 
 /** Y/M/D of `date` as displayed in `timeZone` (calendar-only, no time-of-day). */
-function getZonedYMD(date: Date, timeZone: string): { year: number; month: number; day: number } {
+export function getZonedYMD(date: Date, timeZone: string): { year: number; month: number; day: number } {
   const dtf = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
   const parts = dtf.formatToParts(date).reduce((acc, p) => {
     acc[p.type] = p.value;
@@ -32,7 +32,7 @@ function getTimezoneOffsetMinutes(date: Date, timeZone: string): number {
 }
 
 /** The UTC instant at which `timeZone`'s wall clock reads year-month-day hour:minute. DST-aware. */
-function zonedTimeToUtc(year: number, month: number, day: number, hour: number, minute: number, timeZone: string): Date {
+export function zonedTimeToUtc(year: number, month: number, day: number, hour: number, minute: number, timeZone: string): Date {
   const naiveUtc = Date.UTC(year, month - 1, day, hour, minute, 0);
   const offsetMinutes = getTimezoneOffsetMinutes(new Date(naiveUtc), timeZone);
   return new Date(naiveUtc - offsetMinutes * 60000);
@@ -71,6 +71,39 @@ export function computeLockThresholdFromEarliestGame(
     lineLockHour,
     0,
     lineLockTimezone,
+  );
+}
+
+/**
+ * Like computeLockThresholdFromEarliestGame, but always resolves FORWARD from
+ * earliestGameTime's calendar day, wrapping to the next week if targetDayOfWeek falls
+ * earlier in the Sun-Sat numbering than the anchor day. The lock threshold deliberately
+ * anchors backward (Tuesday, 2 days before a Thursday kickoff); a reminder like "Sunday
+ * 11am" needs the opposite — Sunday(0) is numerically less than Thursday(4), so the
+ * backward version would resolve to the PRIOR week's Sunday instead of the one 3 days after
+ * that Thursday game. See app/lib/reminders.ts.
+ */
+export function computeForwardThresholdFromEarliestGame(
+  earliestGameTime: Date,
+  targetDayOfWeek: number,
+  targetHour: number,
+  timezone: string,
+): Date {
+  const { year, month, day } = getZonedYMD(earliestGameTime, timezone);
+  const daysSinceEpoch = Date.UTC(year, month - 1, day) / 86400000;
+  const currentDow = (((Math.round(daysSinceEpoch) + 4) % 7) + 7) % 7;
+  const delta = ((targetDayOfWeek - currentDow) % 7 + 7) % 7; // always 0-6, never backward
+
+  const calendarAnchor = new Date(Date.UTC(year, month - 1, day));
+  calendarAnchor.setUTCDate(calendarAnchor.getUTCDate() + delta);
+
+  return zonedTimeToUtc(
+    calendarAnchor.getUTCFullYear(),
+    calendarAnchor.getUTCMonth() + 1,
+    calendarAnchor.getUTCDate(),
+    targetHour,
+    0,
+    timezone,
   );
 }
 

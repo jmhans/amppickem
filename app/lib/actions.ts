@@ -3,7 +3,7 @@
 import ExcelJS from 'exceljs';
 import { cookies } from 'next/headers';
 import { db } from '@/app/lib/db';
-import { participants, seasons, games, picks, systemSettings, payoutTiers, weekTemplates, type PickType, type PickSelection } from '@/app/lib/db/schema';
+import { participants, seasons, games, picks, systemSettings, payoutTiers, weekTemplates, pushSubscriptions, type PickType, type PickSelection } from '@/app/lib/db/schema';
 import { eq, and, isNotNull, asc, sql, lte } from 'drizzle-orm';
 import { auth0 } from '@/app/lib/auth0';
 import { isAdmin } from '@/app/lib/auth-utils';
@@ -14,6 +14,7 @@ import { syncWeekGames } from '@/app/lib/espn-api';
 import { computeLockThresholdFromEarliestGame } from '@/app/lib/lines-lock';
 import { FIRST_GAME_ROW, LAST_GAME_ROW } from '@/app/lib/template-layout';
 import { teamAbbrevFromFullName } from '@/app/lib/team-names';
+import { computeIncompletePicksForWeek } from '@/app/lib/picks-status';
 import {
   computeParticipantWeekStats,
   computeWeeklyStandings,
@@ -204,6 +205,74 @@ export async function requireCanEditParticipant(participantId: number) {
   if (!canEdit) return { ok: false as const, error: "That's not your picks to edit" };
 
   return { ok: true as const, isAdmin: admin };
+}
+
+// --- Participant self-service settings (entry name/email/notification prefs) ---
+
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Owner (or Admin-Mode admin) edits their own entry's name/email/notification prefs — same auth gate as picks editing. */
+export async function updateMyParticipant(
+  participantId: number,
+  fields: { name: string; email: string; notificationsEnabled: boolean; notificationChannel: 'email' | 'push' },
+) {
+  const auth = await requireCanEditParticipant(participantId);
+  if (!auth.ok) return { success: false, error: auth.error };
+
+  const name = fields.name.trim();
+  const email = fields.email.trim();
+  if (!name) return { success: false, error: 'Entry name is required' };
+  if (email && !EMAIL_SHAPE.test(email)) return { success: false, error: 'That email address doesn\'t look right' };
+
+  await db
+    .update(participants)
+    .set({
+      name,
+      email: email || null,
+      notificationsEnabled: fields.notificationsEnabled,
+      notificationChannel: fields.notificationChannel,
+      updatedAt: new Date(),
+    })
+    .where(eq(participants.id, participantId));
+
+  return { success: true };
+}
+
+/** Stores/updates a browser's push subscription for this participant — called after the client completes the PushManager.subscribe() handshake. */
+export async function savePushSubscription(
+  participantId: number,
+  subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
+) {
+  const auth = await requireCanEditParticipant(participantId);
+  if (!auth.ok) return { success: false, error: auth.error };
+
+  if (!subscription?.endpoint || !subscription.keys?.p256dh || !subscription.keys?.auth) {
+    return { success: false, error: 'Invalid push subscription' };
+  }
+
+  await db
+    .insert(pushSubscriptions)
+    .values({
+      participantId,
+      endpoint: subscription.endpoint,
+      p256dh: subscription.keys.p256dh,
+      auth: subscription.keys.auth,
+    })
+    .onConflictDoUpdate({
+      target: pushSubscriptions.endpoint,
+      set: { participantId, p256dh: subscription.keys.p256dh, auth: subscription.keys.auth },
+    });
+
+  return { success: true };
+}
+
+/** Removes one browser's push subscription — called when a user turns push off on that device. */
+export async function removePushSubscription(participantId: number, endpoint: string) {
+  const auth = await requireCanEditParticipant(participantId);
+  if (!auth.ok) return { success: false, error: auth.error };
+
+  await db.delete(pushSubscriptions).where(and(eq(pushSubscriptions.participantId, participantId), eq(pushSubscriptions.endpoint, endpoint)));
+  return { success: true };
 }
 
 /**
@@ -573,6 +642,26 @@ export async function getGamesForWeek(seasonId: number, week: number) {
     .from(games)
     .where(and(eq(games.seasonId, seasonId), eq(games.week, week)))
     .orderBy(asc(games.gameTime));
+}
+
+// --- Admin: weekly picks status (who hasn't finished their picks) ---
+
+export interface PicksStatusRow {
+  participantId: number;
+  name: string;
+  pickCount: number;
+}
+
+/** Admin-facing view of computeIncompletePicksForWeek — strips email/notification fields that helper also carries for reminders.ts's use. */
+export async function getIncompletePicksForWeek(seasonId: number, week: number): Promise<{ picksPerWeek: number; rows: PicksStatusRow[] }> {
+  const auth = await requireAdmin();
+  if (!auth.ok) throw new Error(auth.error);
+
+  const result = await computeIncompletePicksForWeek(seasonId, week);
+  return {
+    picksPerWeek: result.picksPerWeek,
+    rows: result.rows.map(({ participantId, name, pickCount }) => ({ participantId, name, pickCount })),
+  };
 }
 
 // --- Manual results refresh (end-user "refresh" button, app-wide cooldown) ---
