@@ -34,13 +34,20 @@ export default function PicksClientWrapper({
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
 
+  // canEdit/isAdminUser aren't used inside load() itself — getWeekBoardData re-derives
+  // visibility from the session/cookie server-side — but they're included in the dependency
+  // array below so that toggling Admin Mode (which changes these props after router.refresh()
+  // re-renders the server page) forces a refetch. Without them, this effect's dependency
+  // (`load`) never changes identity, so the already-fetched (possibly redacted) picks would
+  // stick around until the next unrelated re-fetch.
   const load = useCallback(async () => {
     setLoading(true);
     const data = await getWeekBoardData(participantId, seasonId, week);
     setGames(data.games as BoardGame[]);
     setPicksState(data.picks as BoardPick[]);
     setLoading(false);
-  }, [participantId, seasonId, week]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [participantId, seasonId, week, canEdit, isAdminUser]);
 
   useEffect(() => {
     load();
@@ -104,6 +111,12 @@ export default function PicksClientWrapper({
         </div>
         {canEdit && <CommissionerExport participantId={participantId} week={week} />}
       </div>
+
+      {!canEdit && (
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          Picks for games that haven&apos;t started yet are hidden until kickoff.
+        </p>
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 

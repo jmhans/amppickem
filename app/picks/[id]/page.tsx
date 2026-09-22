@@ -1,9 +1,10 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { auth0 } from '@/app/lib/auth0';
-import { isAdmin } from '@/app/lib/auth-utils';
+import { isEffectiveAdmin } from '@/app/lib/admin-mode';
 import { getParticipantById, getOrCreateActiveSeason, getLatestStandingsWeek } from '@/app/lib/actions';
 import PicksClientWrapper from './PicksClientWrapper';
+import ParticipantSettings from './ParticipantSettings';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +27,7 @@ export default async function PicksPage({
   const resolvedSearchParams = (await searchParams) ?? {};
   const week = resolvedSearchParams.week ? Number(resolvedSearchParams.week) : await getLatestStandingsWeek(season.id);
 
-  const isAdminUser = isAdmin(session.user);
+  const isAdminUser = await isEffectiveAdmin(session.user);
   const canEdit = participant.auth0Id === session.user.sub || isAdminUser;
 
   return (
@@ -45,6 +46,16 @@ export default async function PicksPage({
           {participant.name} — Picks
         </h1>
       </div>
+
+      {canEdit && (
+        <ParticipantSettings
+          participantId={participantId}
+          initialName={participant.name}
+          initialEmail={participant.email ?? ''}
+          initialNotificationsEnabled={participant.notificationsEnabled}
+          initialNotificationChannel={participant.notificationChannel}
+        />
+      )}
 
       <PicksClientWrapper
         participantId={participantId}

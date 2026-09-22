@@ -22,7 +22,7 @@ export default async function BoardPage({
     <main>
       <h1 className="text-2xl font-semibold text-gray-900 dark:text-white mb-1">Pick Board</h1>
       <p className="mb-5 text-sm text-gray-600 dark:text-gray-400">
-        Everyone&apos;s picks for the week, once lines are locked in. Green covered/hit, red missed, yellow pushed.
+        Everyone&apos;s picks for the week, once lines are locked in — picks stay hidden until each game kicks off. Green covered/hit, red missed, yellow pushed.
       </p>
 
       <BoardClientWrapper seasonId={season.id} weeks={weeks} initialWeek={week} />

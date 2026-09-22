@@ -11,6 +11,10 @@ export const participants = ampPickemSchema.table('participants', {
   auth0Id: text('auth0_id'), // nullable; set when a logged-in user "claims" this row (see claimParticipantAccount)
   hidePicksUntilLock: boolean('hide_picks_until_lock').default(true).notNull(),
   isActive: boolean('is_active').default(true).notNull(),
+  // Reminder opt-out (default on) + delivery choice — see app/lib/reminders.ts. 'push' falls
+  // back to email at send time if the participant has no live subscription row.
+  notificationsEnabled: boolean('notifications_enabled').default(true).notNull(),
+  notificationChannel: text('notification_channel').default('email').notNull(), // 'email' | 'push'
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => [
@@ -142,6 +146,20 @@ export const weekTemplates = ampPickemSchema.table('week_templates', {
   uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
 }, (t) => [
   unique('week_templates_season_week_uniq').on(t.seasonId, t.week),
+]);
+
+// A participant may subscribe from several browsers/devices — one row each, keyed by the
+// browser-issued endpoint (naturally unique; resubscribing the same browser upserts against
+// it rather than duplicating). See app/lib/push.ts / app/lib/reminders.ts.
+export const pushSubscriptions = ampPickemSchema.table('push_subscriptions', {
+  id: serial('id').primaryKey(),
+  participantId: integer('participant_id').notNull().references(() => participants.id, { onDelete: 'cascade' }),
+  endpoint: text('endpoint').notNull().unique(),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+  index('push_subscriptions_participant_idx').on(t.participantId),
 ]);
 
 export const systemSettings = ampPickemSchema.table('system_settings', {

@@ -41,3 +41,20 @@ export async function sendPicksEmailToCommissioner(opts: {
     ],
   });
 }
+
+/** Nudge email for a participant still short of their weekly pick count — see app/lib/reminders.ts. */
+export async function sendPickReminderEmail(opts: {
+  participantEmail: string;
+  participantName: string;
+  week: number;
+  pickCount: number;
+  picksPerWeek: number;
+  picksUrl: string;
+}) {
+  await getTransporter().sendMail({
+    from: process.env.GMAIL_USER,
+    to: opts.participantEmail,
+    subject: `Reminder: Week ${opts.week} picks (${opts.pickCount}/${opts.picksPerWeek})`,
+    text: `Hi ${opts.participantName},\n\nYou've made ${opts.pickCount} of ${opts.picksPerWeek} picks for Week ${opts.week}. Make sure to finish before games start:\n${opts.picksUrl}\n\nSent from AMP Pick'em. You can turn these reminders off from your picks page.`,
+  });
+}

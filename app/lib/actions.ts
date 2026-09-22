@@ -1,17 +1,20 @@
 'use server';
 
 import ExcelJS from 'exceljs';
+import { cookies } from 'next/headers';
 import { db } from '@/app/lib/db';
-import { participants, seasons, games, picks, systemSettings, payoutTiers, weekTemplates, type PickType, type PickSelection } from '@/app/lib/db/schema';
+import { participants, seasons, games, picks, systemSettings, payoutTiers, weekTemplates, pushSubscriptions, type PickType, type PickSelection } from '@/app/lib/db/schema';
 import { eq, and, isNotNull, asc, sql, lte } from 'drizzle-orm';
 import { auth0 } from '@/app/lib/auth0';
 import { isAdmin } from '@/app/lib/auth-utils';
+import { isEffectiveAdmin, ADMIN_MODE_COOKIE } from '@/app/lib/admin-mode';
 import { gradePick, gradeSpreadPick, gradeTotalPick } from '@/app/lib/grading';
 import { isPickLocked } from '@/app/lib/pick-lock';
 import { syncWeekGames } from '@/app/lib/espn-api';
 import { computeLockThresholdFromEarliestGame } from '@/app/lib/lines-lock';
 import { FIRST_GAME_ROW, LAST_GAME_ROW } from '@/app/lib/template-layout';
 import { teamAbbrevFromFullName } from '@/app/lib/team-names';
+import { computeIncompletePicksForWeek } from '@/app/lib/picks-status';
 import {
   computeParticipantWeekStats,
   computeWeeklyStandings,
@@ -196,11 +199,81 @@ export async function requireCanEditParticipant(participantId: number) {
   const participant = await getParticipantById(participantId);
   if (!participant) return { ok: false as const, error: 'Participant not found' };
 
-  const admin = isAdmin(session.user);
+  // Admin-editing-someone-else's-picks only kicks in with Admin Mode on (see admin-mode.ts) —
+  // an admin with the mode off can only edit their own entry, same as any other participant.
+  const admin = await isEffectiveAdmin(session.user);
   const canEdit = participant.auth0Id === session.user.sub || admin;
   if (!canEdit) return { ok: false as const, error: "That's not your picks to edit" };
 
   return { ok: true as const, isAdmin: admin };
+}
+
+// --- Participant self-service settings (entry name/email/notification prefs) ---
+
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Owner (or Admin-Mode admin) edits their own entry's name/email/notification prefs — same auth gate as picks editing. */
+export async function updateMyParticipant(
+  participantId: number,
+  fields: { name: string; email: string; notificationsEnabled: boolean; notificationChannel: 'email' | 'push' },
+) {
+  const auth = await requireCanEditParticipant(participantId);
+  if (!auth.ok) return { success: false, error: auth.error };
+
+  const name = fields.name.trim();
+  const email = fields.email.trim();
+  if (!name) return { success: false, error: 'Entry name is required' };
+  if (email && !EMAIL_SHAPE.test(email)) return { success: false, error: 'That email address doesn\'t look right' };
+
+  await db
+    .update(participants)
+    .set({
+      name,
+      email: email || null,
+      notificationsEnabled: fields.notificationsEnabled,
+      notificationChannel: fields.notificationChannel,
+      updatedAt: new Date(),
+    })
+    .where(eq(participants.id, participantId));
+
+  return { success: true };
+}
+
+/** Stores/updates a browser's push subscription for this participant — called after the client completes the PushManager.subscribe() handshake. */
+export async function savePushSubscription(
+  participantId: number,
+  subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
+) {
+  const auth = await requireCanEditParticipant(participantId);
+  if (!auth.ok) return { success: false, error: auth.error };
+
+  if (!subscription?.endpoint || !subscription.keys?.p256dh || !subscription.keys?.auth) {
+    return { success: false, error: 'Invalid push subscription' };
+  }
+
+  await db
+    .insert(pushSubscriptions)
+    .values({
+      participantId,
+      endpoint: subscription.endpoint,
+      p256dh: subscription.keys.p256dh,
+      auth: subscription.keys.auth,
+    })
+    .onConflictDoUpdate({
+      target: pushSubscriptions.endpoint,
+      set: { participantId, p256dh: subscription.keys.p256dh, auth: subscription.keys.auth },
+    });
+
+  return { success: true };
+}
+
+/** Removes one browser's push subscription — called when a user turns push off on that device. */
+export async function removePushSubscription(participantId: number, endpoint: string) {
+  const auth = await requireCanEditParticipant(participantId);
+  if (!auth.ok) return { success: false, error: auth.error };
+
+  await db.delete(pushSubscriptions).where(and(eq(pushSubscriptions.participantId, participantId), eq(pushSubscriptions.endpoint, endpoint)));
+  return { success: true };
 }
 
 /**
@@ -297,13 +370,33 @@ export async function setGamePickLock(gameId: number, locked: boolean) {
   return { success: true };
 }
 
-/** Combined fetch for the picks UI — this week's pickable games plus this participant's existing picks. */
+/**
+ * Combined fetch for the picks UI — this week's pickable games plus this participant's
+ * existing picks. The viewer only sees the FULL pick list when it's their own entry (or
+ * they're admin); otherwise picks for games that haven't kicked off yet (per isPickLocked)
+ * are withheld, same as they'd be blank on the pick board. Viewer identity is derived from
+ * the session server-side, not trusted from the caller — this is a public server action.
+ */
 export async function getWeekBoardData(participantId: number, seasonId: number, week: number) {
-  const [weekGames, weekPicks] = await Promise.all([
+  const [weekGames, weekPicks, session, participant] = await Promise.all([
     getWeekGamesForPicking(seasonId, week),
     getPicksForParticipantWeek(participantId, seasonId, week),
+    auth0.getSession(),
+    getParticipantById(participantId),
   ]);
-  return { games: weekGames, picks: weekPicks };
+
+  const isOwner = !!session?.user?.sub && participant?.auth0Id === session.user.sub;
+  const canSeeAll = isOwner || (await isEffectiveAdmin(session?.user));
+  if (canSeeAll) {
+    return { games: weekGames, picks: weekPicks };
+  }
+
+  const gameById = new Map(weekGames.map((g) => [g.id, g]));
+  const visiblePicks = weekPicks.filter((p) => {
+    const game = gameById.get(p.gameId);
+    return game ? isPickLocked(game) : false;
+  });
+  return { games: weekGames, picks: visiblePicks };
 }
 
 // --- Grading + standings ---
@@ -521,12 +614,55 @@ async function requireAdmin() {
   return { ok: true as const };
 }
 
+// --- Admin Mode toggle (see admin-mode.ts) ---
+
+/** Whether Admin Mode is currently on for the logged-in admin — false for anyone else. */
+export async function getAdminMode(): Promise<boolean> {
+  const session = await auth0.getSession();
+  return isEffectiveAdmin(session?.user);
+}
+
+/** Flips the Admin Mode cookie — re-checks real adminship server-side, ignoring whatever the client claims. */
+export async function setAdminMode(on: boolean) {
+  const session = await auth0.getSession();
+  if (!session?.user || !isAdmin(session.user)) {
+    return { success: false, error: 'Admins only' };
+  }
+  const store = await cookies();
+  store.set(ADMIN_MODE_COOKIE, on ? 'on' : 'off', {
+    path: '/',
+    sameSite: 'lax',
+    maxAge: 60 * 60 * 24 * 365,
+  });
+  return { success: true };
+}
+
 export async function getGamesForWeek(seasonId: number, week: number) {
   return db
     .select()
     .from(games)
     .where(and(eq(games.seasonId, seasonId), eq(games.week, week)))
     .orderBy(asc(games.gameTime));
+}
+
+// --- Admin: weekly picks status (who hasn't finished their picks) ---
+
+export interface PicksStatusRow {
+  participantId: number;
+  name: string;
+  pickCount: number;
+}
+
+/** Admin-facing view of computeIncompletePicksForWeek — strips email/notification fields that helper also carries for reminders.ts's use. */
+export async function getIncompletePicksForWeek(seasonId: number, week: number): Promise<{ picksPerWeek: number; rows: PicksStatusRow[] }> {
+  const auth = await requireAdmin();
+  if (!auth.ok) throw new Error(auth.error);
+
+  const result = await computeIncompletePicksForWeek(seasonId, week);
+  return {
+    picksPerWeek: result.picksPerWeek,
+    rows: result.rows.map(({ participantId, name, pickCount }) => ({ participantId, name, pickCount })),
+  };
 }
 
 // --- Manual results refresh (end-user "refresh" button, app-wide cooldown) ---
@@ -855,7 +991,13 @@ export interface BoardGameRow {
   overPicks: BoardPickEntry[];
 }
 
-/** Everyone's picks for one week, games in kickoff order — only locked (visible) games, matching what participants could actually see when picking. */
+/**
+ * Everyone's picks for one week, games in kickoff order — only locked (visible) games,
+ * matching what participants could actually see when picking. Games that haven't kicked
+ * off yet (per isPickLocked) show zero picks/names for everyone, not just the current
+ * viewer — opponents' picks stay private until kickoff, same rule the picks page enforces
+ * for viewing someone else's entry.
+ */
 export async function getBoardData(seasonId: number, week: number): Promise<BoardGameRow[]> {
   const [weekGames, weekPicks] = await Promise.all([
     getWeekGamesForPicking(seasonId, week),
@@ -873,7 +1015,7 @@ export async function getBoardData(seasonId: number, week: number): Promise<Boar
   ]);
 
   return weekGames.map((g) => {
-    const gamePicks = weekPicks.filter((p) => p.gameId === g.id);
+    const gamePicks = isPickLocked(g) ? weekPicks.filter((p) => p.gameId === g.id) : [];
     const entry = (participantId: number, name: string): BoardPickEntry => ({ participantId, name });
 
     const scored = g.isFinal && g.homeScore != null && g.awayScore != null;
