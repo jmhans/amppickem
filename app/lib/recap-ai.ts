@@ -1,14 +1,10 @@
 // Plain module (no 'use server') — the actual LLM call for the AI-drafted recap (see
 // generateRecapDraft in actions.ts). Kept separate from recap-stats.ts so "gather the facts"
 // and "turn facts into prose" stay independently testable/replaceable.
-//
-// Uses Gemini (Google AI Studio's free tier) rather than a paid API — this is a once-a-week,
-// tiny-prompt call, well within free-tier limits, and doesn't need Claude-level capability
-// just to turn a short fact sheet into a few paragraphs of prose.
-import { GoogleGenAI } from '@google/genai';
+import Anthropic from '@anthropic-ai/sdk';
 import type { RecapWeekStats } from '@/app/lib/recap-stats';
 
-const MODEL = 'gemini-2.5-flash';
+const MODEL = 'claude-sonnet-5';
 
 /**
  * Turns computed stats into a plain-language fact sheet for the model — all the arithmetic
@@ -58,38 +54,34 @@ function formatStatsForPrompt(stats: RecapWeekStats): string {
   return lines.join('\n');
 }
 
-const SYSTEM_INSTRUCTION =
-  'You write a short, fun weekly recap for a friends\' NFL spread pick\'em pool. Casual and a little playful, ' +
-  'never mean-spirited about anyone\'s picks. Use ONLY the facts given — never invent scores, teams, lines, or ' +
-  'names that are not in the fact sheet, and never state a number that was not given to you. If a category has ' +
-  'no facts listed, skip it entirely rather than inventing something to fill the gap. Write in plain paragraphs ' +
-  '(a blank line between paragraphs) — no markdown headers, bullet points, or bold text. Keep it to 3-5 short ' +
-  'paragraphs. Respond with ONLY a JSON object shaped {"title": string, "body": string} and nothing else — no ' +
-  'code fences, no explanation before or after it.';
-
 /** Throws on any failure (missing key, bad response, etc.) — caller (generateRecapDraft) turns that into a user-facing error string. */
 export async function generateRecapText(stats: RecapWeekStats): Promise<{ title: string; body: string }> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured');
 
-  const client = new GoogleGenAI({ apiKey });
+  const client = new Anthropic({ apiKey });
   const factSheet = formatStatsForPrompt(stats);
 
-  const response = await client.models.generateContent({
+  const message = await client.messages.create({
     model: MODEL,
-    contents: `Here are this week's facts:\n\n${factSheet}\n\nWrite the recap.`,
-    config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
-      responseMimeType: 'application/json',
-    },
+    max_tokens: 1024,
+    system:
+      'You write a short, fun weekly recap for a friends\' NFL spread pick\'em pool. Casual and a little playful, ' +
+      'never mean-spirited about anyone\'s picks. Use ONLY the facts given — never invent scores, teams, lines, or ' +
+      'names that are not in the fact sheet, and never state a number that was not given to you. If a category has ' +
+      'no facts listed, skip it entirely rather than inventing something to fill the gap. Write in plain paragraphs ' +
+      '(a blank line between paragraphs) — no markdown headers, bullet points, or bold text. Keep it to 3-5 short ' +
+      'paragraphs. Respond with ONLY a JSON object shaped {"title": string, "body": string} and nothing else — no ' +
+      'code fences, no explanation before or after it.',
+    messages: [{ role: 'user', content: `Here are this week's facts:\n\n${factSheet}\n\nWrite the recap.` }],
   });
 
-  const text = response.text;
-  if (!text) throw new Error('No text response from model');
+  const textBlock = message.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
+  if (!textBlock) throw new Error('No text response from model');
 
   let parsed: { title?: unknown; body?: unknown };
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(textBlock.text);
   } catch {
     throw new Error('Model did not return valid JSON');
   }
