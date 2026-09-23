@@ -530,6 +530,7 @@ export async function getStandingsRawData(seasonId: number): Promise<StandingsRa
       weeklyPotPerWeek: season.weeklyPotPerWeek,
       lostPicksPrizeAmount: season.lostPicksPrizeAmount,
       numWeeksInSeason: season.lastWeek - season.firstWeek + 1,
+      lastWeek: season.lastWeek,
       tiers,
     },
     currentWeek,
