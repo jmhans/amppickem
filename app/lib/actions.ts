@@ -3,8 +3,8 @@
 import ExcelJS from 'exceljs';
 import { cookies } from 'next/headers';
 import { db } from '@/app/lib/db';
-import { participants, seasons, games, picks, systemSettings, payoutTiers, weekTemplates, pushSubscriptions, type PickType, type PickSelection } from '@/app/lib/db/schema';
-import { eq, and, isNotNull, asc, sql, lte } from 'drizzle-orm';
+import { participants, seasons, games, picks, systemSettings, payoutTiers, weekTemplates, pushSubscriptions, weeklyRecaps, type PickType, type PickSelection } from '@/app/lib/db/schema';
+import { eq, and, isNotNull, asc, desc, sql, lte } from 'drizzle-orm';
 import { auth0 } from '@/app/lib/auth0';
 import { isAdmin } from '@/app/lib/auth-utils';
 import { isEffectiveAdmin, ADMIN_MODE_COOKIE } from '@/app/lib/admin-mode';
@@ -15,6 +15,8 @@ import { computeLockThresholdFromEarliestGame } from '@/app/lib/lines-lock';
 import { FIRST_GAME_ROW, LAST_GAME_ROW } from '@/app/lib/template-layout';
 import { teamAbbrevFromFullName } from '@/app/lib/team-names';
 import { computeIncompletePicksForWeek } from '@/app/lib/picks-status';
+import { sendRecapEmail } from '@/app/lib/email';
+import { sendPushToParticipant } from '@/app/lib/push';
 import {
   computeParticipantWeekStats,
   computeWeeklyStandings,
@@ -1059,4 +1061,116 @@ export async function getBoardData(seasonId: number, week: number): Promise<Boar
       overPicks: gamePicks.filter((p) => p.pickType === 'over_under' && p.selection === 'over').map((p) => entry(p.participantId, p.name)),
     };
   });
+}
+
+// --- Weekly Recaps ---
+
+/** Everything an admin needs to manage recaps for a season — drafts and already-sent alike, newest first. */
+export async function getRecapsForAdmin(seasonId: number) {
+  const auth = await requireAdmin();
+  if (!auth.ok) return [];
+  return db.select().from(weeklyRecaps).where(eq(weeklyRecaps.seasonId, seasonId)).orderBy(desc(weeklyRecaps.createdAt));
+}
+
+/** Public listing — only ever recaps that have actually been sent (see sendRecap below). */
+export async function getPublishedRecaps(seasonId: number) {
+  return db
+    .select()
+    .from(weeklyRecaps)
+    .where(and(eq(weeklyRecaps.seasonId, seasonId), isNotNull(weeklyRecaps.publishedAt)))
+    .orderBy(desc(weeklyRecaps.publishedAt));
+}
+
+export async function getRecapById(id: number) {
+  const [recap] = await db.select().from(weeklyRecaps).where(eq(weeklyRecaps.id, id)).limit(1);
+  return recap ?? null;
+}
+
+export async function createRecap(seasonId: number, week: number, title: string, body: string) {
+  const auth = await requireAdmin();
+  if (!auth.ok) return { success: false as const, error: auth.error };
+  if (!title.trim()) return { success: false as const, error: 'Title is required' };
+
+  const [row] = await db.insert(weeklyRecaps).values({ seasonId, week, title: title.trim(), body }).returning({ id: weeklyRecaps.id });
+  return { success: true as const, id: row.id };
+}
+
+/** Works whether the recap is still a draft or already sent — sending doesn't freeze the text, only re-notifying is blocked (see sendRecap). */
+export async function updateRecap(id: number, fields: { week: number; title: string; body: string }) {
+  const auth = await requireAdmin();
+  if (!auth.ok) return { success: false, error: auth.error };
+  if (!fields.title.trim()) return { success: false, error: 'Title is required' };
+
+  await db
+    .update(weeklyRecaps)
+    .set({ week: fields.week, title: fields.title.trim(), body: fields.body, updatedAt: new Date() })
+    .where(eq(weeklyRecaps.id, id));
+  return { success: true };
+}
+
+/** Drafts only — a sent recap may already be linked from an email/push notification, so its row stays put. */
+export async function deleteRecap(id: number) {
+  const auth = await requireAdmin();
+  if (!auth.ok) return { success: false, error: auth.error };
+
+  const [recap] = await db.select().from(weeklyRecaps).where(eq(weeklyRecaps.id, id)).limit(1);
+  if (!recap) return { success: false, error: 'Recap not found' };
+  if (recap.publishedAt) return { success: false, error: "Can't delete a recap that's already been sent" };
+
+  await db.delete(weeklyRecaps).where(eq(weeklyRecaps.id, id));
+  return { success: true };
+}
+
+/**
+ * Publishes a recap (stamps publishedAt, making it visible on /recaps) and, in the same
+ * step, notifies every active participant per their own notification prefs — same
+ * push-with-email-fallback pattern as app/lib/reminders.ts. One-shot: a recap that's
+ * already been sent refuses a second send rather than re-notifying everyone.
+ */
+export async function sendRecap(id: number) {
+  const auth = await requireAdmin();
+  if (!auth.ok) return { success: false as const, error: auth.error };
+
+  const [recap] = await db.select().from(weeklyRecaps).where(eq(weeklyRecaps.id, id)).limit(1);
+  if (!recap) return { success: false as const, error: 'Recap not found' };
+  if (recap.publishedAt) return { success: false as const, error: 'This recap has already been sent' };
+
+  await db.update(weeklyRecaps).set({ publishedAt: new Date() }).where(eq(weeklyRecaps.id, id));
+
+  const activeParticipants = await db
+    .select({
+      id: participants.id,
+      email: participants.email,
+      notificationsEnabled: participants.notificationsEnabled,
+      notificationChannel: participants.notificationChannel,
+    })
+    .from(participants)
+    .where(eq(participants.isActive, true));
+
+  const recapUrl = `${process.env.APP_BASE_URL}/recaps/${id}`;
+  let emailed = 0;
+  let pushed = 0;
+
+  await Promise.all(
+    activeParticipants.filter((p) => p.notificationsEnabled).map(async (p) => {
+      if (p.notificationChannel === 'push') {
+        const result = await sendPushToParticipant(p.id, {
+          title: 'New weekly recap',
+          body: recap.title,
+          url: recapUrl,
+        });
+        if (result.sent > 0) {
+          pushed++;
+          return;
+        }
+        // No live subscription (or send failed) — fall back to email rather than losing the notification.
+      }
+      if (p.email) {
+        await sendRecapEmail({ participantEmail: p.email, title: recap.title, recapUrl });
+        emailed++;
+      }
+    }),
+  );
+
+  return { success: true as const, emailed, pushed };
 }

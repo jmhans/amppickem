@@ -3,7 +3,6 @@ import { auth0 } from '@/app/lib/auth0';
 import { redirect } from 'next/navigation';
 import { lusitana } from '@/app/ui/fonts';
 import { isAdmin } from '@/app/lib/auth-utils';
-import HomeButton from '@/app/ui/home-button';
 
 const ADMIN_CARDS = [
   {
@@ -50,6 +49,13 @@ const ADMIN_CARDS = [
     color: 'rose',
     icon: <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />,
   },
+  {
+    href: '/admin/recaps',
+    title: 'Weekly Recaps',
+    description: 'Write, preview, and send recaps',
+    color: 'indigo',
+    icon: <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />,
+  },
 ] as const;
 
 const COLOR_CLASSES: Record<string, { bg: string; text: string; hoverBg: string; hoverBorder: string; hoverText: string }> = {
@@ -59,6 +65,7 @@ const COLOR_CLASSES: Record<string, { bg: string; text: string; hoverBg: string;
   orange: { bg: 'bg-orange-100', text: 'text-orange-600', hoverBg: 'group-hover:bg-orange-600', hoverBorder: 'hover:border-orange-500', hoverText: 'group-hover:text-orange-600' },
   teal: { bg: 'bg-teal-100', text: 'text-teal-600', hoverBg: 'group-hover:bg-teal-600', hoverBorder: 'hover:border-teal-500', hoverText: 'group-hover:text-teal-600' },
   rose: { bg: 'bg-rose-100', text: 'text-rose-600', hoverBg: 'group-hover:bg-rose-600', hoverBorder: 'hover:border-rose-500', hoverText: 'group-hover:text-rose-600' },
+  indigo: { bg: 'bg-indigo-100', text: 'text-indigo-600', hoverBg: 'group-hover:bg-indigo-600', hoverBorder: 'hover:border-indigo-500', hoverText: 'group-hover:text-indigo-600' },
 };
 
 export default async function AdminPage() {
@@ -72,14 +79,10 @@ export default async function AdminPage() {
 
   if (!userIsAdmin) {
     return (
-      <main className="flex min-h-screen flex-col p-6 bg-white dark:bg-gray-900">
-        <HomeButton />
-
-        <div className="flex h-20 shrink-0 items-end rounded-lg bg-blue-500 dark:bg-blue-600 p-4 md:h-32 mb-8 mt-4">
-          <h1 className={`${lusitana.className} text-white text-3xl md:text-5xl`}>
-            Admin Dashboard
-          </h1>
-        </div>
+      <main className="space-y-5">
+        <h1 className={`${lusitana.className} text-2xl md:text-3xl text-gray-900 dark:text-white`}>
+          Admin Dashboard
+        </h1>
 
         <div className="rounded-lg bg-red-50 dark:bg-red-900/20 p-6 text-center">
           <p className="text-red-800 dark:text-red-200 font-medium">Access Denied</p>
@@ -90,14 +93,10 @@ export default async function AdminPage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col p-6 bg-white dark:bg-gray-900">
-      <HomeButton />
-
-      <div className="flex h-20 shrink-0 items-end rounded-lg bg-blue-500 dark:bg-blue-600 p-4 md:h-32 mb-8 mt-4">
-        <h1 className={`${lusitana.className} text-white text-3xl md:text-5xl`}>
-          Admin Dashboard
-        </h1>
-      </div>
+    <main className="space-y-5">
+      <h1 className={`${lusitana.className} text-2xl md:text-3xl text-gray-900 dark:text-white`}>
+        Admin Dashboard
+      </h1>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {ADMIN_CARDS.map((card) => {

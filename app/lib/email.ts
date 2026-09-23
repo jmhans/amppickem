@@ -42,6 +42,16 @@ export async function sendPicksEmailToCommissioner(opts: {
   });
 }
 
+/** "There's a new weekly recap" nudge email — see sendRecap in app/lib/actions.ts. */
+export async function sendRecapEmail(opts: { participantEmail: string; title: string; recapUrl: string }) {
+  await getTransporter().sendMail({
+    from: process.env.GMAIL_USER,
+    to: opts.participantEmail,
+    subject: `New Weekly Recap: ${opts.title}`,
+    text: `There's a new weekly recap: ${opts.title}\n\n${opts.recapUrl}\n\nSent from AMP Pick'em.`,
+  });
+}
+
 /** Nudge email for a participant still short of their weekly pick count — see app/lib/reminders.ts. */
 export async function sendPickReminderEmail(opts: {
   participantEmail: string;
