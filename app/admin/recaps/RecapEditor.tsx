@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { createRecap, updateRecap, deleteRecap, sendRecap } from '@/app/lib/actions';
+import { createRecap, updateRecap, deleteRecap, sendRecap, generateRecapDraft } from '@/app/lib/actions';
 
 type Recap = {
   id: number;
@@ -35,9 +35,27 @@ export default function RecapEditor({
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [sendResult, setSendResult] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
   const isNew = !recap;
   const isSent = !!recap?.publishedAt;
+
+  async function handleGenerate() {
+    if ((title.trim() || body.trim()) && !confirm('This will replace the current title and body with an AI-generated draft. Continue?')) {
+      return;
+    }
+    setGenerateError(null);
+    setIsGenerating(true);
+    const result = await generateRecapDraft(seasonId, week);
+    setIsGenerating(false);
+    if (result.success) {
+      setTitle(result.title);
+      setBody(result.body);
+    } else {
+      setGenerateError(result.error);
+    }
+  }
 
   function handleSave() {
     setMessage(null);
@@ -95,6 +113,21 @@ export default function RecapEditor({
             Sent {new Date(recap!.publishedAt!).toLocaleString()} — editing below only changes the page, it won&apos;t re-notify anyone.
           </p>
         )}
+
+        <div className="flex flex-wrap items-center gap-3 rounded-md bg-indigo-50 dark:bg-indigo-900/20 px-3 py-2.5">
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={isGenerating}
+            className="rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 px-3 py-1.5 text-sm font-medium text-white transition-colors"
+          >
+            {isGenerating ? 'Generating…' : '✨ Generate with AI'}
+          </button>
+          <span className="text-xs text-indigo-800 dark:text-indigo-300">
+            Drafts a recap from Week {week}&apos;s actual results — weekly winners, upsets, and how the pool picked. You can edit everything before saving.
+          </span>
+        </div>
+        {generateError && <p className="text-sm text-red-600 dark:text-red-400">{generateError}</p>}
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <label className="block col-span-1">
