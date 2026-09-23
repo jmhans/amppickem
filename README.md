@@ -28,6 +28,7 @@ npm run db:studio     # browse the DB
 - **Grading**: `admin/results` grades picks (win/loss/push) once a game is final — idempotent, re-gradable at any time, self-heals from a corrected score or line.
 - **Crons**: `api/cron/sync-games` (daily line/score sync + lock check), `api/cron/grade` (daily re-grade), `api/cron/pick-reminders` (hourly; see "Pick reminders" below) — all require a `CRON_SECRET` bearer token.
 - **Feedback**: the nav dropdown's "Feedback" item (`app/ui/feedback-button.tsx`) lets a signed-in user file a bug/feature request that's created directly as a GitHub issue (`app/api/feedback`) on this repo, labelled `feedback` — same pattern as fgt2/ABL. Requires `GITHUB_FEEDBACK_TOKEN` (a fine-grained PAT scoped to just this repo, Issues read/write); without it the endpoint returns 503 and the modal just says feedback isn't configured, rather than erroring.
+- **Weekly Recaps**: `admin/recaps` lets an admin write/edit a plain-text recap (blank line = new paragraph, no rich-text editor) and preview it styled like `/about`. A recap stays a draft, admin-only, until "Send Now" — that one action both publishes it to `/recaps` (public) and notifies every active participant with notifications on via their own email/push preference, same delivery path as pick reminders. Sending is one-shot; editing a recap afterward never re-notifies.
 
 ## Commissioner sync (temporary bridge)
 

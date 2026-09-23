@@ -162,6 +162,25 @@ export const pushSubscriptions = ampPickemSchema.table('push_subscriptions', {
   index('push_subscriptions_participant_idx').on(t.participantId),
 ]);
 
+// Admin-authored recap posts, one typically per week. Drafted (publishedAt null) recaps
+// are admin-only; "sending" one (see sendRecap in actions.ts) stamps publishedAt AND fires
+// the notification sweep in the same step — there's no separate publish-without-notifying
+// step. body is plain text, rendered as one paragraph per blank-line-separated block (see
+// app/recaps/[id]/page.tsx) — deliberately not markdown/rich text, per the "just adjusting
+// text" ask.
+export const weeklyRecaps = ampPickemSchema.table('weekly_recaps', {
+  id: serial('id').primaryKey(),
+  seasonId: integer('season_id').notNull().references(() => seasons.id, { onDelete: 'cascade' }),
+  week: integer('week').notNull(),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  publishedAt: timestamp('published_at'), // null = draft, not yet sent or visible to participants
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => [
+  index('weekly_recaps_season_week_idx').on(t.seasonId, t.week),
+]);
+
 export const systemSettings = ampPickemSchema.table('system_settings', {
   id: serial('id').primaryKey(),
   key: text('key').notNull().unique(), // e.g. 'last_lines_sync', 'last_grade_run'
