@@ -184,6 +184,7 @@ export interface PayoutConfig {
   weeklyPotPerWeek: number;
   lostPicksPrizeAmount: number;
   numWeeksInSeason: number;
+  lastWeek: number;
   tiers: PayoutTierConfig[];
 }
 
@@ -223,8 +224,13 @@ export function computeSeasonStandings(
   const skinsPoolThroughUptoWeek = payoutConfig.weeklyPotPerWeek * skinsThroughUptoWeek.length;
   const sharePerSkin = totalSkinsAwarded > 0 ? skinsPoolThroughUptoWeek / totalSkinsAwarded : 0;
 
+  // The Lost Picks prize is a season-long award decided only once the season's last week
+  // is fully graded — showing a running "leader" mid-season would just be whoever's had
+  // the roughest few weeks so far, not a meaningful standing, so withhold the payout
+  // (the Lost Picks *count* column is unaffected — this only zeroes its $ contribution).
+  const seasonComplete = weekComplete[payoutConfig.lastWeek] === true;
   const maxLostPicks = Math.max(0, ...current.map((r) => r.totals.lostPicks));
-  const lostPicksLeaders = maxLostPicks > 0 ? current.filter((r) => r.totals.lostPicks === maxLostPicks) : [];
+  const lostPicksLeaders = seasonComplete && maxLostPicks > 0 ? current.filter((r) => r.totals.lostPicks === maxLostPicks) : [];
   const lostPicksSharePerLeader = lostPicksLeaders.length > 0 ? payoutConfig.lostPicksPrizeAmount / lostPicksLeaders.length : 0;
 
   // Unlike skinsPoolThroughUptoWeek above, this is the FULL season's skins budget — entry
