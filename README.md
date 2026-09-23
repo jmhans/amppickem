@@ -26,7 +26,7 @@ npm run db:studio     # browse the DB
 - **Lines**: `admin/lines` syncs spreads + over/unders from ESPN's public scoreboard API and freezes ("locks") each week automatically at a configurable weekly cutoff (default Tuesday 7am Central) — or an admin can lock/unlock manually. Once locked, automatic sync never overwrites the line; a manual admin edit always can.
 - **Picks**: participants pick against locked (visible) games only, via `picks/[participantId]`.
 - **Grading**: `admin/results` grades picks (win/loss/push) once a game is final — idempotent, re-gradable at any time, self-heals from a corrected score or line.
-- **Crons**: `api/cron/sync-games` (daily line/score sync + lock check), `api/cron/grade` (daily re-grade), `api/cron/pick-reminders` (hourly; see "Pick reminders" below) — all require a `CRON_SECRET` bearer token.
+- **Crons**: `api/cron/sync-games` (daily line/score sync + lock check), `api/cron/sync-spreads` (weekly, timed to land shortly after the configured line-lock threshold — same sync-then-lock sweep as sync-games, just closer to the actual cutoff than once-a-day catches), `api/cron/grade` (daily re-grade), `api/cron/pick-reminders` (hourly; see "Pick reminders" below) — all require a `CRON_SECRET` bearer token.
 - **Feedback**: the nav dropdown's "Feedback" item (`app/ui/feedback-button.tsx`) lets a signed-in user file a bug/feature request that's created directly as a GitHub issue (`app/api/feedback`) on this repo, labelled `feedback` — same pattern as fgt2/ABL. Requires `GITHUB_FEEDBACK_TOKEN` (a fine-grained PAT scoped to just this repo, Issues read/write); without it the endpoint returns 503 and the modal just says feedback isn't configured, rather than erroring.
 
 ## Commissioner sync (temporary bridge)
