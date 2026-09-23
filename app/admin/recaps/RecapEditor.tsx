@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { createRecap, updateRecap, deleteRecap, sendRecap } from '@/app/lib/actions';
+import RecapBody from '@/app/ui/recap-body';
 
 type Recap = {
   id: number;
@@ -11,11 +12,6 @@ type Recap = {
   body: string;
   publishedAt: string | null;
 };
-
-/** Same paragraph split the public recap page and the list preview use — a blank line starts a new paragraph. */
-function splitParagraphs(body: string): string[] {
-  return body.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
-}
 
 export default function RecapEditor({
   seasonId,
@@ -85,8 +81,6 @@ export default function RecapEditor({
     });
   }
 
-  const paragraphs = splitParagraphs(body);
-
   return (
     <div className="space-y-6">
       <div className="space-y-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 shadow-sm">
@@ -122,12 +116,14 @@ export default function RecapEditor({
         </div>
 
         <label className="block">
-          <span className="block text-xs font-medium text-gray-500 dark:text-gray-400">Body — leave a blank line between paragraphs</span>
+          <span className="block text-xs font-medium text-gray-500 dark:text-gray-400">
+            Body — Markdown supported (**bold**, _italic_, [links](url), - lists, blank line = new paragraph)
+          </span>
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={14}
-            className="mt-1 w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-white px-3 py-2 text-sm"
+            className="mt-1 w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-white px-3 py-2 text-sm font-mono"
           />
         </label>
 
@@ -179,12 +175,8 @@ export default function RecapEditor({
 
       <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Preview</h2>
-        <div className="mt-2 space-y-2 text-sm text-gray-700 dark:text-gray-300">
-          {paragraphs.length === 0 ? (
-            <p className="italic text-gray-400 dark:text-gray-500">Nothing yet.</p>
-          ) : (
-            paragraphs.map((p, i) => <p key={i}>{p}</p>)
-          )}
+        <div className="mt-2">
+          {body.trim() === '' ? <p className="italic text-gray-400 dark:text-gray-500 text-sm">Nothing yet.</p> : <RecapBody body={body} />}
         </div>
       </div>
     </div>

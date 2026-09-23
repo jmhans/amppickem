@@ -4,9 +4,18 @@ import { getOrCreateActiveSeason, getPublishedRecaps } from '@/app/lib/actions';
 
 export const dynamic = 'force-dynamic';
 
-/** Same paragraph split as the recap detail page — used here just for the card's snippet. */
+/**
+ * Plain-text teaser for the card — the body itself may be Markdown (see RecapBody), but a
+ * card snippet reads better as a stripped-down single line than as partially-rendered
+ * formatting, so this pulls the first paragraph and knocks out the common syntax characters
+ * rather than rendering it.
+ */
 function firstParagraph(body: string): string {
-  return body.split(/\n\s*\n/).map((s) => s.trim()).find(Boolean) ?? '';
+  const raw = body.split(/\n\s*\n/).map((s) => s.trim()).find(Boolean) ?? '';
+  return raw
+    .replace(/[#>*_`~]/g, '')
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .trim();
 }
 
 export default async function RecapsPage() {

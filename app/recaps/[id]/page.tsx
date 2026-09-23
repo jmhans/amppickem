@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { lusitana } from '@/app/ui/fonts';
 import { getRecapById } from '@/app/lib/actions';
+import RecapBody from '@/app/ui/recap-body';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,8 +17,6 @@ export default async function RecapDetailPage({
   // a guessed id can't be used to peek at an unsent recap.
   if (!recap || !recap.publishedAt) notFound();
 
-  const paragraphs = recap.body.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
-
   return (
     <main className="space-y-5">
       <div>
@@ -29,10 +28,8 @@ export default async function RecapDetailPage({
         </p>
       </div>
 
-      <div className="space-y-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 shadow-sm text-sm text-gray-700 dark:text-gray-300">
-        {paragraphs.map((p, i) => (
-          <p key={i}>{p}</p>
-        ))}
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 shadow-sm">
+        <RecapBody body={recap.body} />
       </div>
     </main>
   );
