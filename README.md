@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Requires a `.env.local` with `POSTGRES_URL`, `POSTGRES_URL_DEV`, `AUTH0_SECRET`, `APP_BASE_URL`, `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `CRON_SECRET` — see amp-playoff-fantasy for the shared Auth0/DB values. For the commissioner-email feature, also `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `COMMISSIONER_EMAIL` (see "Commissioner sync" below); for pick reminders, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (see "Pick reminders" below); for AI-drafted recaps, `ANTHROPIC_API_KEY` (see "Weekly Recaps" below).
+Requires a `.env.local` with `POSTGRES_URL`, `POSTGRES_URL_DEV`, `AUTH0_SECRET`, `APP_BASE_URL`, `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `CRON_SECRET` — see amp-playoff-fantasy for the shared Auth0/DB values. For the commissioner-email feature, also `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `COMMISSIONER_EMAIL` (see "Commissioner sync" below); for pick reminders, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (see "Pick reminders" below).
 
 ## Database
 
@@ -28,7 +28,7 @@ npm run db:studio     # browse the DB
 - **Grading**: `admin/results` grades picks (win/loss/push) once a game is final — idempotent, re-gradable at any time, self-heals from a corrected score or line.
 - **Crons**: `api/cron/sync-games` (daily line/score sync + lock check), `api/cron/grade` (daily re-grade), `api/cron/pick-reminders` (hourly; see "Pick reminders" below) — all require a `CRON_SECRET` bearer token.
 - **Feedback**: the nav dropdown's "Feedback" item (`app/ui/feedback-button.tsx`) lets a signed-in user file a bug/feature request that's created directly as a GitHub issue (`app/api/feedback`) on this repo, labelled `feedback` — same pattern as fgt2/ABL. Requires `GITHUB_FEEDBACK_TOKEN` (a fine-grained PAT scoped to just this repo, Issues read/write); without it the endpoint returns 503 and the modal just says feedback isn't configured, rather than erroring.
-- **Weekly Recaps**: `admin/recaps` lets an admin write/edit a plain-text recap (blank line = new paragraph, no rich-text editor) and preview it styled like `/about`. A recap stays a draft, admin-only, until "Send Now" — that one action both publishes it to `/recaps` (public) and notifies every active participant with notifications on via their own email/push preference, same delivery path as pick reminders. Sending is one-shot; editing a recap afterward never re-notifies. "✨ Generate with AI" (needs `ANTHROPIC_API_KEY`) drafts a title/body from that week's actual results — weekly ("skins") winners, upsets (underdog won outright), games that blew past the spread/total, and pool-wide pick patterns (a lot of entries on the losing side, or almost nobody on the winning side) — all computed in `app/lib/recap-stats.ts` and handed to the model as plain-language facts (`app/lib/recap-ai.ts`) so it's writing prose, not doing arithmetic. It only returns text into the same editable fields; nothing is saved or sent until the admin does so manually.
+- **Weekly Recaps**: `admin/recaps` lets an admin write/edit a plain-text recap (blank line = new paragraph, no rich-text editor) and preview it styled like `/about`. A recap stays a draft, admin-only, until "Send Now" — that one action both publishes it to `/recaps` (public) and notifies every active participant with notifications on via their own email/push preference, same delivery path as pick reminders. Sending is one-shot; editing a recap afterward never re-notifies.
 
 ## Commissioner sync (temporary bridge)
 

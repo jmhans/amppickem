@@ -17,8 +17,6 @@ import { teamAbbrevFromFullName } from '@/app/lib/team-names';
 import { computeIncompletePicksForWeek } from '@/app/lib/picks-status';
 import { sendRecapEmail } from '@/app/lib/email';
 import { sendPushToParticipant } from '@/app/lib/push';
-import { computeWeekRecapStats } from '@/app/lib/recap-stats';
-import { generateRecapText } from '@/app/lib/recap-ai';
 import {
   computeParticipantWeekStats,
   computeWeeklyStandings,
@@ -1168,32 +1166,4 @@ export async function sendRecap(id: number) {
   );
 
   return { success: true as const, emailed, pushed };
-}
-
-/**
- * Drafts a title/body from that week's actual results (weekly winners, upsets, blown lines,
- * pool-wide pick patterns — see app/lib/recap-stats.ts) via Claude, for the admin to review
- * and edit in the normal recap editor before saving or sending — this never writes to the
- * database itself, it just returns text. Requires ANTHROPIC_API_KEY; a deployment without it
- * configured gets a clear error rather than a silent no-op, since there's no sensible
- * fallback for "write me a recap."
- */
-export async function generateRecapDraft(
-  seasonId: number,
-  week: number,
-): Promise<{ success: true; title: string; body: string } | { success: false; error: string }> {
-  const auth = await requireAdmin();
-  if (!auth.ok) return { success: false, error: auth.error };
-
-  const stats = await computeWeekRecapStats(seasonId, week);
-  if (!stats) return { success: false, error: 'No completed games found for that week yet — nothing to summarize.' };
-
-  try {
-    const { title, body } = await generateRecapText(stats);
-    return { success: true, title, body };
-  } catch (error) {
-    console.error('Recap generation failed:', error);
-    const message = error instanceof Error ? error.message : 'Failed to generate a recap draft';
-    return { success: false, error: message };
-  }
 }
