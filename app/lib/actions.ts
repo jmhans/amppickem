@@ -597,12 +597,18 @@ export async function setPayoutTiers(seasonId: number, tiers: { rank: number; pe
   const auth = await requireAdmin();
   if (!auth.ok) return { success: false, error: auth.error };
 
-  await db.transaction(async (tx) => {
-    await tx.delete(payoutTiers).where(eq(payoutTiers.seasonId, seasonId));
-    if (tiers.length > 0) {
-      await tx.insert(payoutTiers).values(tiers.map((t) => ({ seasonId, rank: t.rank, percentage: t.percentage })));
-    }
-  });
+  // db.transaction is unsupported on the neon-http driver (throws "No
+  // transactions support in neon-http driver" every time) — db.batch is the
+  // driver's actual atomic-multi-statement primitive, sent as one HTTP
+  // request instead of an interactive session.
+  if (tiers.length === 0) {
+    await db.delete(payoutTiers).where(eq(payoutTiers.seasonId, seasonId));
+  } else {
+    await db.batch([
+      db.delete(payoutTiers).where(eq(payoutTiers.seasonId, seasonId)),
+      db.insert(payoutTiers).values(tiers.map((t) => ({ seasonId, rank: t.rank, percentage: t.percentage }))),
+    ]);
+  }
   return { success: true };
 }
 
