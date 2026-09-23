@@ -1172,9 +1172,9 @@ export async function sendRecap(id: number) {
 
 /**
  * Drafts a title/body from that week's actual results (weekly winners, upsets, blown lines,
- * pool-wide pick patterns — see app/lib/recap-stats.ts) via Claude, for the admin to review
+ * pool-wide pick patterns — see app/lib/recap-stats.ts) via Gemini, for the admin to review
  * and edit in the normal recap editor before saving or sending — this never writes to the
- * database itself, it just returns text. Requires ANTHROPIC_API_KEY; a deployment without it
+ * database itself, it just returns text. Requires GEMINI_API_KEY; a deployment without it
  * configured gets a clear error rather than a silent no-op, since there's no sensible
  * fallback for "write me a recap."
  */
