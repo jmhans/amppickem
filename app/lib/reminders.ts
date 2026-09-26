@@ -23,6 +23,7 @@ export interface SendRemindersResult {
   reason?: string;
   emailed?: number;
   pushed?: number;
+  failed?: number;
 }
 
 /**
@@ -67,34 +68,43 @@ export async function sendReminders(kind: ReminderKind): Promise<SendRemindersRe
 
   let emailed = 0;
   let pushed = 0;
+  let failed = 0;
 
+  // Best-effort per recipient — one participant's bad email address or a transient SMTP/push
+  // failure must never take down the whole batch (Promise.all rejects on the FIRST rejected
+  // promise, which would silently skip notifying everyone else still pending).
   await Promise.all(
     rows.filter((r) => r.notificationsEnabled).map(async (r) => {
-      if (r.notificationChannel === 'push') {
-        const result = await sendPushToParticipant(r.participantId, {
-          title: `Week ${week} picks: ${r.pickCount}/${picksPerWeek}`,
-          body: "Don't forget to finish your picks before games start.",
-          url: picksUrl(r.participantId),
-        });
-        if (result.sent > 0) {
-          pushed++;
-          return;
+      try {
+        if (r.notificationChannel === 'push') {
+          const result = await sendPushToParticipant(r.participantId, {
+            title: `Week ${week} picks: ${r.pickCount}/${picksPerWeek}`,
+            body: "Don't forget to finish your picks before games start.",
+            url: picksUrl(r.participantId),
+          });
+          if (result.sent > 0) {
+            pushed++;
+            return;
+          }
+          // No live subscription (or send failed) — fall back to email rather than losing the reminder.
         }
-        // No live subscription (or send failed) — fall back to email rather than losing the reminder.
-      }
-      if (r.email) {
-        await sendPickReminderEmail({
-          participantEmail: r.email,
-          participantName: r.name,
-          week,
-          pickCount: r.pickCount,
-          picksPerWeek,
-          picksUrl: picksUrl(r.participantId),
-        });
-        emailed++;
+        if (r.email) {
+          await sendPickReminderEmail({
+            participantEmail: r.email,
+            participantName: r.name,
+            week,
+            pickCount: r.pickCount,
+            picksPerWeek,
+            picksUrl: picksUrl(r.participantId),
+          });
+          emailed++;
+        }
+      } catch (error) {
+        failed++;
+        console.error(`Failed to send ${kind} reminder to participant ${r.participantId}:`, error);
       }
     }),
   );
 
-  return { sent: true, emailed, pushed };
+  return { sent: true, emailed, pushed, failed };
 }

@@ -60,7 +60,8 @@ export default function RecapEditor({
     startTransition(async () => {
       const result = await sendRecap(recap.id);
       if (result.success) {
-        setSendResult(`Sent — ${result.emailed} emailed, ${result.pushed} pushed.`);
+        const failedNote = result.failed > 0 ? `, ${result.failed} failed` : '';
+        setSendResult(`Sent — ${result.emailed} emailed, ${result.pushed} pushed${failedNote}.`);
         router.refresh();
       } else {
         setSendResult(result.error ?? 'Failed to send');
