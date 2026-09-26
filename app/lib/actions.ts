@@ -278,6 +278,28 @@ export async function removePushSubscription(participantId: number, endpoint: st
   return { success: true };
 }
 
+/** "Test Push" button in Entry Settings — sends one push to every device THIS participant has subscribed, so they can confirm it actually arrives before relying on it. */
+export async function sendTestPush(participantId: number) {
+  const auth = await requireCanEditParticipant(participantId);
+  if (!auth.ok) return { success: false as const, error: auth.error };
+
+  const result = await sendPushToParticipant(participantId, {
+    title: 'Test push from AMP Pick\'em',
+    body: 'If you can see this, push notifications are working on this device.',
+    url: `${process.env.APP_BASE_URL}/picks/${participantId}`,
+  });
+
+  if (result.sent === 0) {
+    return {
+      success: false as const,
+      error: result.failed > 0
+        ? "Push failed to send — your subscription may be stale. Try turning push off and back on."
+        : 'No active push subscription found on this device — try enabling push again.',
+    };
+  }
+  return { success: true as const, sent: result.sent };
+}
+
 /**
  * Sets (inserts or changes) one pick. Validates: viewer owns this participant
  * (or is admin), the game belongs to the given season/week, its lines are

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useTransition } from 'react';
-import { updateMyParticipant, savePushSubscription, removePushSubscription } from '@/app/lib/actions';
+import { updateMyParticipant, savePushSubscription, removePushSubscription, sendTestPush } from '@/app/lib/actions';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -38,6 +38,8 @@ export default function ParticipantSettings({
   const [pushBusy, setPushBusy] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
   const [isIosNotStandalone, setIsIosNotStandalone] = useState(false);
+  const [testPushBusy, setTestPushBusy] = useState(false);
+  const [testPushMessage, setTestPushMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const ua = window.navigator.userAgent;
@@ -100,6 +102,14 @@ export default function ParticipantSettings({
     } finally {
       setPushBusy(false);
     }
+  }
+
+  async function handleTestPush() {
+    setTestPushMessage(null);
+    setTestPushBusy(true);
+    const result = await sendTestPush(participantId);
+    setTestPushMessage(result.success ? 'Sent — check this device.' : (result.error ?? 'Failed to send test push'));
+    setTestPushBusy(false);
   }
 
   async function handleDisablePush() {
@@ -194,14 +204,25 @@ export default function ParticipantSettings({
                   ) : pushStatus === 'subscribed' ? (
                     <div>
                       <p className="mb-1">Push is enabled on this device.</p>
-                      <button
-                        type="button"
-                        onClick={handleDisablePush}
-                        disabled={pushBusy}
-                        className="rounded border border-gray-300 dark:border-gray-600 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
-                      >
-                        Turn off on this device
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleTestPush}
+                          disabled={testPushBusy}
+                          className="rounded border border-gray-300 dark:border-gray-600 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                        >
+                          {testPushBusy ? 'Sending…' : 'Send test push'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDisablePush}
+                          disabled={pushBusy}
+                          className="rounded border border-gray-300 dark:border-gray-600 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                        >
+                          Turn off on this device
+                        </button>
+                      </div>
+                      {testPushMessage && <p className="mt-1">{testPushMessage}</p>}
                     </div>
                   ) : (
                     <div>
