@@ -1150,27 +1150,36 @@ export async function sendRecap(id: number) {
   const recapUrl = `${process.env.APP_BASE_URL}/recaps/${id}`;
   let emailed = 0;
   let pushed = 0;
+  let failed = 0;
 
+  // Best-effort per recipient — one participant's bad email address or a transient SMTP/push
+  // failure must never take down the whole batch (Promise.all rejects on the FIRST rejected
+  // promise, which would silently skip notifying everyone else still pending).
   await Promise.all(
     activeParticipants.filter((p) => p.notificationsEnabled).map(async (p) => {
-      if (p.notificationChannel === 'push') {
-        const result = await sendPushToParticipant(p.id, {
-          title: 'New weekly recap',
-          body: recap.title,
-          url: recapUrl,
-        });
-        if (result.sent > 0) {
-          pushed++;
-          return;
+      try {
+        if (p.notificationChannel === 'push') {
+          const result = await sendPushToParticipant(p.id, {
+            title: 'New weekly recap',
+            body: recap.title,
+            url: recapUrl,
+          });
+          if (result.sent > 0) {
+            pushed++;
+            return;
+          }
+          // No live subscription (or send failed) — fall back to email rather than losing the notification.
         }
-        // No live subscription (or send failed) — fall back to email rather than losing the notification.
-      }
-      if (p.email) {
-        await sendRecapEmail({ participantEmail: p.email, title: recap.title, recapUrl });
-        emailed++;
+        if (p.email) {
+          await sendRecapEmail({ participantEmail: p.email, title: recap.title, recapUrl });
+          emailed++;
+        }
+      } catch (error) {
+        failed++;
+        console.error(`Failed to notify participant ${p.id} about recap ${id}:`, error);
       }
     }),
   );
 
-  return { success: true as const, emailed, pushed };
+  return { success: true as const, emailed, pushed, failed };
 }
