@@ -12,6 +12,8 @@ export interface EspnGame {
   homeScore: number | null;
   awayScore: number | null;
   status: string | null;
+  period: number | null;
+  displayClock: string | null;
   isFinal: boolean;
 }
 
@@ -99,6 +101,9 @@ async function fetchGameFromCore(eventId: string, teamAbbrevs: Map<string, strin
       homeScore: homeScore?.value != null ? Number(homeScore.value) : null,
       awayScore: awayScore?.value != null ? Number(awayScore.value) : null,
       status: status?.type?.name ?? null,
+      // Both null once the game is final or before it's started — only meaningful mid-game.
+      period: status?.period ?? null,
+      displayClock: status?.displayClock ?? null,
       isFinal: !!status?.type?.completed,
     };
   } catch {
@@ -157,6 +162,8 @@ export async function syncWeekGames(
         homeScore: eg.homeScore,
         awayScore: eg.awayScore,
         status: eg.status,
+        period: eg.period,
+        displayClock: eg.displayClock,
         isFinal: eg.isFinal,
         espnGameId: eg.espnGameId,
         gameTime: eg.gameTime,
@@ -177,6 +184,8 @@ export async function syncWeekGames(
         homeScore: eg.homeScore,
         awayScore: eg.awayScore,
         status: eg.status,
+        period: eg.period,
+        displayClock: eg.displayClock,
         isFinal: eg.isFinal,
         gameTime: eg.gameTime,
         // Never overwrite a locked line. Never null out an existing unlocked

@@ -423,6 +423,85 @@ export async function getWeekBoardData(participantId: number, seasonId: number, 
   return { games: weekGames, picks: visiblePicks };
 }
 
+// --- GameDay Dashboard ---
+
+export interface GameDayPick {
+  pickId: number;
+  gameId: number;
+  awayTeam: string;
+  homeTeam: string;
+  gameTime: Date | null;
+  isFinal: boolean;
+  status: string | null;
+  period: number | null;
+  displayClock: string | null;
+  homeScore: number | null;
+  awayScore: number | null;
+  spread: number | null;
+  overUnder: number | null;
+  pickType: PickType;
+  selection: PickSelection;
+  result: 'pending' | 'win' | 'loss' | 'push' | 'void';
+}
+
+export interface GameDayRank {
+  value: number;
+  tied: boolean;
+  total: number;
+}
+
+export interface GameDayData {
+  rank: GameDayRank | null;
+  picks: GameDayPick[];
+}
+
+/**
+ * Everything app/gameday needs in one call: this participant's picks for the week — each
+ * with its game's live score/clock, straight from whatever the most recent sync-games cron
+ * run last wrote — plus their weekly standings rank (computeWeeklyStandings's competition
+ * ranking, so a tie already shares one rank number; `tied` just tells the UI whether to
+ * prefix it, e.g. "T13/43"). Owner (or Admin-Mode admin) only, same gate as every other
+ * participant-scoped action.
+ */
+export async function getGameDayData(participantId: number, seasonId: number, week: number): Promise<GameDayData> {
+  const auth = await requireCanEditParticipant(participantId);
+  if (!auth.ok) return { rank: null, picks: [] };
+
+  const [pickRows, standings] = await Promise.all([
+    db
+      .select({
+        pickId: picks.id,
+        gameId: games.id,
+        awayTeam: games.awayTeam,
+        homeTeam: games.homeTeam,
+        gameTime: games.gameTime,
+        isFinal: games.isFinal,
+        status: games.status,
+        period: games.period,
+        displayClock: games.displayClock,
+        homeScore: games.homeScore,
+        awayScore: games.awayScore,
+        spread: games.spread,
+        overUnder: games.overUnder,
+        pickType: picks.pickType,
+        selection: picks.selection,
+        result: picks.result,
+      })
+      .from(picks)
+      .innerJoin(games, eq(picks.gameId, games.id))
+      .where(and(eq(picks.participantId, participantId), eq(picks.seasonId, seasonId), eq(picks.week, week)))
+      .orderBy(asc(games.gameTime)),
+    getWeeklyStandings(seasonId, week),
+  ]);
+
+  const mine = standings.find((r) => r.participantId === participantId);
+  const rank: GameDayRank | null = mine
+    ? { value: mine.rank, tied: standings.filter((r) => r.rank === mine.rank).length > 1, total: standings.length }
+    : null;
+
+  return { rank, picks: pickRows as GameDayPick[] };
+}
+
 // --- Grading + standings ---
 
 /**
