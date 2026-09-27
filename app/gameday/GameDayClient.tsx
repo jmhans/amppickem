@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { getGameDayData, refreshCurrentWeekScores, type GameDayData, type GameDayPick } from '@/app/lib/actions';
 import { teamLogoUrl } from '@/app/lib/team-logos';
 import { gradeSpreadPick, gradeTotalPick } from '@/app/lib/grading';
@@ -231,6 +232,10 @@ export default function GameDayClient({
         </div>
         {data && <RankBadge rank={data.rank} />}
       </div>
+
+      <Link href="/gameday/methodology" className="inline-block text-xs text-blue-600 hover:text-blue-500">
+        How the live win % is calculated →
+      </Link>
 
       {loading ? (
         <p className="text-sm text-gray-500">Loading…</p>
