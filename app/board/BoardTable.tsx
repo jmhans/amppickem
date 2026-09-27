@@ -19,11 +19,14 @@ type Outcome = 'home' | 'away' | 'over' | 'under' | 'push' | null;
 // Cell color reflects whether THIS side actually covered/hit — independent of who picked it,
 // so an empty cell for a losing side still reads at a glance.
 function cellClasses(winner: Outcome, thisSide: 'home' | 'away' | 'over' | 'under'): string {
+  // Dark mode needs noticeably higher opacity than light mode's pastel -100 washes do — a
+  // dark shade at low opacity on top of the table's own bg-gray-800 reads as barely-there,
+  // not as a distinct win/loss/push tint.
   if (winner == null) return 'bg-gray-50 dark:bg-gray-800/50';
-  if (winner === 'push') return 'bg-yellow-100 dark:bg-yellow-900/30';
+  if (winner === 'push') return 'bg-yellow-100 dark:bg-yellow-800/60';
   return winner === thisSide
-    ? 'bg-green-100 dark:bg-green-900/30'
-    : 'bg-red-100 dark:bg-red-900/30';
+    ? 'bg-green-100 dark:bg-green-800/60'
+    : 'bg-red-100 dark:bg-red-800/60';
 }
 
 function PickList({ picks }: { picks: BoardPickEntry[] }) {
