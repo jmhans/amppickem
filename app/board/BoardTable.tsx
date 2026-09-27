@@ -53,46 +53,64 @@ export default function BoardTable({ rows }: { rows: BoardGameRow[] }) {
       <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
         <thead className="bg-gray-50 dark:bg-gray-700">
           <tr>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Kickoff</th>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Matchup</th>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Line</th>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">O/U</th>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Away</th>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Home</th>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Under</th>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Over</th>
+            <th className="hidden sm:table-cell px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Kickoff</th>
+            <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Matchup</th>
+            <th className="hidden sm:table-cell px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Line</th>
+            <th className="hidden sm:table-cell px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">O/U</th>
+            <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Away</th>
+            <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Home</th>
+            <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Under</th>
+            <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Over</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
           {rows.map((g) => (
             <tr key={g.id}>
-              <td className="px-3 py-2 align-top whitespace-nowrap text-gray-500 dark:text-gray-400">
+              <td className="hidden sm:table-cell px-3 py-2 align-top whitespace-nowrap text-gray-500 dark:text-gray-400">
                 {formatKickoff(g.gameTime)}
                 {g.isFinal && (
                   <div className="text-xs font-medium text-gray-400">Final {g.awayScore}-{g.homeScore}</div>
                 )}
               </td>
-              <td className="px-3 py-2 align-top whitespace-nowrap text-gray-900 dark:text-white">
-                {teamFullName(g.awayTeam)}<br />@ {teamFullName(g.homeTeam)}
+              <td className="px-2 sm:px-3 py-2 align-top text-gray-900 dark:text-white">
+                <div className="whitespace-nowrap">
+                  {teamFullName(g.awayTeam)}<br />@ {teamFullName(g.homeTeam)}
+                </div>
+                {/* sm and up: Kickoff/Line/O/U are their own columns — this is the mobile-only fold-in,
+                    so small screens keep one narrow "game info" column instead of four, leaving more
+                    room for the four pick-list columns that actually matter at a glance. */}
+                <div className="sm:hidden mt-1 space-y-0.5 text-[11px] font-normal text-gray-500 dark:text-gray-400">
+                  <div>
+                    {formatKickoff(g.gameTime)}
+                    {g.isFinal && <span className="font-medium"> · Final {g.awayScore}-{g.homeScore}</span>}
+                  </div>
+                  <div className="tabular-nums">
+                    Line {g.spread ?? '-'}
+                    {g.actualMargin != null && ` ${formatBracket(g.actualMargin)}`}
+                    {' · O/U '}
+                    {g.overUnder ?? '-'}
+                    {g.actualTotal != null && ` [${g.actualTotal}]`}
+                  </div>
+                </div>
               </td>
-              <td className="px-3 py-2 align-top tabular-nums text-gray-700 dark:text-gray-300">
+              <td className="hidden sm:table-cell px-3 py-2 align-top tabular-nums text-gray-700 dark:text-gray-300">
                 {g.spread ?? '-'}
                 {g.actualMargin != null && <div className="text-xs text-gray-400">{formatBracket(g.actualMargin)}</div>}
               </td>
-              <td className="px-3 py-2 align-top tabular-nums text-gray-700 dark:text-gray-300">
+              <td className="hidden sm:table-cell px-3 py-2 align-top tabular-nums text-gray-700 dark:text-gray-300">
                 {g.overUnder ?? '-'}
                 {g.actualTotal != null && <div className="text-xs text-gray-400">[{g.actualTotal}]</div>}
               </td>
-              <td className={`px-3 py-2 align-top ${cellClasses(g.spreadWinner, 'away')}`}>
+              <td className={`px-2 sm:px-3 py-2 align-top ${cellClasses(g.spreadWinner, 'away')}`}>
                 <PickList picks={g.awayPicks} />
               </td>
-              <td className={`px-3 py-2 align-top ${cellClasses(g.spreadWinner, 'home')}`}>
+              <td className={`px-2 sm:px-3 py-2 align-top ${cellClasses(g.spreadWinner, 'home')}`}>
                 <PickList picks={g.homePicks} />
               </td>
-              <td className={`px-3 py-2 align-top ${cellClasses(g.totalWinner, 'under')}`}>
+              <td className={`px-2 sm:px-3 py-2 align-top ${cellClasses(g.totalWinner, 'under')}`}>
                 <PickList picks={g.underPicks} />
               </td>
-              <td className={`px-3 py-2 align-top ${cellClasses(g.totalWinner, 'over')}`}>
+              <td className={`px-2 sm:px-3 py-2 align-top ${cellClasses(g.totalWinner, 'over')}`}>
                 <PickList picks={g.overPicks} />
               </td>
             </tr>
