@@ -43,6 +43,57 @@ function normalCdf(z: number): number {
   return 0.5 * (1 + erf(z / Math.SQRT2));
 }
 
+/**
+ * Inverse standard normal CDF (probit function) — Peter Acklam's rational approximation,
+ * accurate to ~1.15e-9. Needed to go the other direction from normalCdf: given a probability
+ * (from live market odds), recover the z-score, so a probability observed at one threshold
+ * (the live line) can be re-expressed as an implied mean and then re-evaluated at a different
+ * threshold (the pool's locked line) — see projectPregameFromLiveOdds.
+ */
+function inverseNormalCdf(p: number): number {
+  if (p <= 0) return -Infinity;
+  if (p >= 1) return Infinity;
+
+  const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+  const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01];
+  const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+  const d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00];
+  const pLow = 0.02425;
+  const pHigh = 1 - pLow;
+
+  if (p < pLow) {
+    const q = Math.sqrt(-2 * Math.log(p));
+    return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5])
+      / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  }
+  if (p <= pHigh) {
+    const q = p - 0.5;
+    const r = q * q;
+    return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q
+      / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+  }
+  const q = Math.sqrt(-2 * Math.log(1 - p));
+  return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5])
+    / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+}
+
+/** American odds -> raw (vig-included) implied probability. */
+function americanOddsToImpliedProb(odds: number): number {
+  return odds < 0 ? -odds / (-odds + 100) : 100 / (odds + 100);
+}
+
+/**
+ * Vig-free probability for "side A", given American odds for both sides of the same market
+ * (e.g. home spread price vs. away spread price, or over price vs. under price). The two raw
+ * implied probabilities sum to more than 1 (that excess is the sportsbook's vig); dividing
+ * side A's raw probability by the sum removes it proportionally — the standard de-vig method.
+ */
+function vigFreeProbability(oddsForSideA: number, oddsForSideB: number): number {
+  const pA = americanOddsToImpliedProb(oddsForSideA);
+  const pB = americanOddsToImpliedProb(oddsForSideB);
+  return pA / (pA + pB);
+}
+
 export interface TeamPace {
   pointsPerMinute: number;
   gamesPlayed: number;
@@ -137,6 +188,55 @@ export interface LiveProjectionInput {
   selection: 'home' | 'away' | 'over' | 'under';
   spread: number | null;
   overUnder: number | null;
+  // Live market line/pricing — see schema.ts's games.liveSpread comment. Only used pregame
+  // (see projectPregameFromLiveOdds); once there's a score, the pace-based projection below
+  // takes over and these are ignored.
+  liveSpread: number | null;
+  liveOverUnder: number | null;
+  liveSpreadHomeOdds: number | null;
+  liveSpreadAwayOdds: number | null;
+  liveOverOdds: number | null;
+  liveUnderOdds: number | null;
+}
+
+/**
+ * Pregame win probability, derived from the market's own current pricing rather than our team-
+ * pace model (see projectWinProbability's doc comment for why — the pace model was checked
+ * against real odds and found overconfident). The pool's own locked line is frozen at whatever
+ * it was Tuesday and may since have drifted from the live market — this re-anchors a
+ * probability computed at the LIVE line onto OUR locked line, through the same normal model
+ * used everywhere else in this file:
+ *
+ *   1. De-vig the live price to get p_live = Pr(cover the LIVE line).
+ *   2. Invert through the normal CDF to recover the implied mean: μ = Φ⁻¹(p_live)·σ − liveLine.
+ *   3. Re-evaluate that same μ against OUR locked line: p_locked = Φ((μ + lockedLine)/σ).
+ *
+ * When the live line equals our locked line, step 3 reduces to exactly p_live — no distortion.
+ * σ here is the full 60-minute combined (home+away) stdev, same FULL_GAME_STDEV constant as
+ * the in-game model, just without any minutes-remaining scaling (nothing's been played yet).
+ * Returns null if the live pricing needed isn't available (e.g. before this feature's first
+ * sync populates it) — the caller falls back to a flat 0.5 in that case.
+ */
+function projectPregameFromLiveOdds(input: LiveProjectionInput): number | null {
+  const combinedSd = FULL_GAME_STDEV * Math.SQRT2;
+
+  if (input.pickType === 'spread') {
+    if (input.spread == null || input.liveSpread == null || input.liveSpreadHomeOdds == null || input.liveSpreadAwayOdds == null) {
+      return null;
+    }
+    const pLiveHomeCovers = vigFreeProbability(input.liveSpreadHomeOdds, input.liveSpreadAwayOdds);
+    const impliedMean = inverseNormalCdf(pLiveHomeCovers) * combinedSd - input.liveSpread;
+    const probHomeCoversLocked = normalCdf((impliedMean + input.spread) / combinedSd);
+    return input.selection === 'home' ? probHomeCoversLocked : 1 - probHomeCoversLocked;
+  }
+
+  if (input.overUnder == null || input.liveOverUnder == null || input.liveOverOdds == null || input.liveUnderOdds == null) {
+    return null;
+  }
+  const pLiveOver = vigFreeProbability(input.liveOverOdds, input.liveUnderOdds);
+  const impliedMean = inverseNormalCdf(pLiveOver) * combinedSd + input.liveOverUnder;
+  const probOverLocked = normalCdf((impliedMean - input.overUnder) / combinedSd);
+  return input.selection === 'over' ? probOverLocked : 1 - probOverLocked;
 }
 
 /**
@@ -146,11 +246,16 @@ export interface LiveProjectionInput {
  * the sum/difference of two independent normals, so it reduces to a single standard
  * Pr(X > threshold) via the normal CDF.
  *
- * Pregame (period 0/null, no score yet) is treated as a 0-0 score with a full 60 minutes
- * remaining — the pregame line itself IS the fair-value starting point, and this collapses to
- * exactly the same formula with the current-score term dropping out, so a not-yet-started pick
- * gets a real probability too rather than nothing. Returns null once the game is officially
- * final (the real grade takes over) or in overtime (period > 4 — this simple model doesn't
+ * Pregame (period 0/null, no score yet) doesn't run this pace model at all — an earlier
+ * version projected forward from team scoring averages even before kickoff, but a live check
+ * against real market odds (see /gameday/methodology's Validation section) showed that was
+ * overconfident: with only a couple games of season data, the credibility blend leans heavily
+ * on a league-wide average that doesn't reflect this specific matchup, and that bias compounds
+ * for totals instead of canceling out. Pregame instead re-anchors the market's own live pricing
+ * onto our locked line — see projectPregameFromLiveOdds — falling back to a flat 0.5 only if
+ * that live pricing isn't available yet. The pace-based projection below only takes over once
+ * there's an actual score to project forward from. Returns null once the game is officially
+ * final (the real grade takes over), in overtime (period > 4 — this simple model doesn't
  * attempt to handle OT's different win conditions), or when the relevant line is missing.
  */
 export function projectWinProbability(input: LiveProjectionInput, paces: SeasonPaces): number | null {
@@ -159,21 +264,17 @@ export function projectWinProbability(input: LiveProjectionInput, paces: SeasonP
   const period = input.period ?? 0;
   if (period > 4) return null; // overtime — out of scope for this model
 
-  let homeScore: number;
-  let awayScore: number;
-  let minsRemaining: number;
-
   if (period < 1) {
-    homeScore = 0;
-    awayScore = 0;
-    minsRemaining = 60;
-  } else {
-    const remaining = minutesRemainingInRegulation(period, input.displayClock);
-    if (remaining == null || input.homeScore == null || input.awayScore == null) return null;
-    homeScore = input.homeScore;
-    awayScore = input.awayScore;
-    minsRemaining = remaining;
+    const hasLine = input.pickType === 'spread' ? input.spread != null : input.overUnder != null;
+    if (!hasLine) return null;
+    return projectPregameFromLiveOdds(input) ?? 0.5;
   }
+
+  const remaining = minutesRemainingInRegulation(period, input.displayClock);
+  if (remaining == null || input.homeScore == null || input.awayScore == null) return null;
+  const homeScore = input.homeScore;
+  const awayScore = input.awayScore;
+  const minsRemaining = remaining;
 
   const homePace = blendedPace(input.homeTeam, paces);
   const awayPace = blendedPace(input.awayTeam, paces);

@@ -486,6 +486,12 @@ export async function getGameDayData(participantId: number, seasonId: number, we
         awayScore: games.awayScore,
         spread: games.spread,
         overUnder: games.overUnder,
+        liveSpread: games.liveSpread,
+        liveOverUnder: games.liveOverUnder,
+        liveSpreadHomeOdds: games.liveSpreadHomeOdds,
+        liveSpreadAwayOdds: games.liveSpreadAwayOdds,
+        liveOverOdds: games.liveOverOdds,
+        liveUnderOdds: games.liveUnderOdds,
         pickType: picks.pickType,
         selection: picks.selection,
         result: picks.result,
@@ -504,8 +510,8 @@ export async function getGameDayData(participantId: number, seasonId: number, we
     : null;
 
   const pickList: GameDayPick[] = pickRows.map((row) => {
-    // projectWinProbability itself handles "pregame" (period 0/null, no score) as a 0-0 score
-    // with a full 60 minutes remaining — no need to gate on scores being non-null here.
+    // projectWinProbability owns all of pregame (live-odds-anchored)/in-progress
+    // (pace-based)/overtime (null)/final (null) branching internally.
     const liveWinProbability =
       row.result === 'pending'
         ? projectWinProbability(
@@ -521,6 +527,12 @@ export async function getGameDayData(participantId: number, seasonId: number, we
               selection: row.selection as PickSelection,
               spread: row.spread,
               overUnder: row.overUnder,
+              liveSpread: row.liveSpread,
+              liveOverUnder: row.liveOverUnder,
+              liveSpreadHomeOdds: row.liveSpreadHomeOdds,
+              liveSpreadAwayOdds: row.liveSpreadAwayOdds,
+              liveOverOdds: row.liveOverOdds,
+              liveUnderOdds: row.liveUnderOdds,
             },
             paces,
           )

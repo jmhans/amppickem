@@ -71,6 +71,20 @@ export const games = ampPickemSchema.table('games', {
   // before touching spread math.
   spread: real('spread'),
   overUnder: real('over_under'),
+  // Live market line/pricing — separate from spread/overUnder (the pool's frozen grading
+  // line) and kept updating even after lock, unlike spread/overUnder. Same home-signed
+  // convention as `spread`. Used only for GameDay Dashboard's pregame win-probability
+  // projection (app/lib/live-projection.ts) to compare "what the pool graded against" to
+  // "what the market currently thinks" — never used for grading itself. The four *Odds
+  // columns are the current American odds price for each side, needed to back out a vig-free
+  // implied probability (a spread/total NUMBER alone doesn't tell you the probability — the
+  // PRICE does, and it moves independently of the number as money comes in).
+  liveSpread: real('live_spread'),
+  liveOverUnder: real('live_over_under'),
+  liveSpreadHomeOdds: integer('live_spread_home_odds'),
+  liveSpreadAwayOdds: integer('live_spread_away_odds'),
+  liveOverOdds: integer('live_over_odds'),
+  liveUnderOdds: integer('live_under_odds'),
   // Non-null = this game's lines are frozen AND visible to participants (both at once —
   // that's the point: everyone picks against the same numbers). Set automatically once the
   // season's configured lock time passes for that week, or manually by an admin (early or
