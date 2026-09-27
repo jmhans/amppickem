@@ -43,6 +43,13 @@
       "when": 1790125112977,
       "tag": "0005_sharp_rocket_racer",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790530525156,
+      "tag": "0006_messy_lady_mastermind",
+      "breakpoints": true
     }
   ]
 }

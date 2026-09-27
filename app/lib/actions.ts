@@ -423,6 +423,109 @@ export async function getWeekBoardData(participantId: number, seasonId: number, 
   return { games: weekGames, picks: visiblePicks };
 }
 
+// --- GameDay Dashboard ---
+
+export interface GameDayPick {
+  pickId: number;
+  gameId: number;
+  awayTeam: string;
+  homeTeam: string;
+  gameTime: Date | null;
+  isFinal: boolean;
+  status: string | null;
+  period: number | null;
+  displayClock: string | null;
+  homeScore: number | null;
+  awayScore: number | null;
+  spread: number | null;
+  overUnder: number | null;
+  pickType: PickType;
+  selection: PickSelection;
+  result: 'pending' | 'win' | 'loss' | 'push' | 'void';
+}
+
+export interface GameDayRank {
+  value: number;
+  tied: boolean;
+  total: number;
+}
+
+export interface GameDayData {
+  rank: GameDayRank | null;
+  picks: GameDayPick[];
+}
+
+/**
+ * Everything app/gameday needs in one call: this participant's picks for the week — each
+ * with its game's live score/clock, straight from whatever the most recent sync-games cron
+ * run last wrote — plus their weekly standings rank (computeWeeklyStandings's competition
+ * ranking, so a tie already shares one rank number; `tied` just tells the UI whether to
+ * prefix it, e.g. "T13/43"). Owner (or Admin-Mode admin) only, same gate as every other
+ * participant-scoped action.
+ */
+export async function getGameDayData(participantId: number, seasonId: number, week: number): Promise<GameDayData> {
+  const auth = await requireCanEditParticipant(participantId);
+  if (!auth.ok) return { rank: null, picks: [] };
+
+  const [pickRows, standings] = await Promise.all([
+    db
+      .select({
+        pickId: picks.id,
+        gameId: games.id,
+        awayTeam: games.awayTeam,
+        homeTeam: games.homeTeam,
+        gameTime: games.gameTime,
+        isFinal: games.isFinal,
+        status: games.status,
+        period: games.period,
+        displayClock: games.displayClock,
+        homeScore: games.homeScore,
+        awayScore: games.awayScore,
+        spread: games.spread,
+        overUnder: games.overUnder,
+        pickType: picks.pickType,
+        selection: picks.selection,
+        result: picks.result,
+      })
+      .from(picks)
+      .innerJoin(games, eq(picks.gameId, games.id))
+      .where(and(eq(picks.participantId, participantId), eq(picks.seasonId, seasonId), eq(picks.week, week)))
+      .orderBy(asc(games.gameTime)),
+    getWeeklyStandings(seasonId, week),
+  ]);
+
+  const mine = standings.find((r) => r.participantId === participantId);
+  const rank: GameDayRank | null = mine
+    ? { value: mine.rank, tied: standings.filter((r) => r.rank === mine.rank).length > 1, total: standings.length }
+    : null;
+
+  return { rank, picks: pickRows as GameDayPick[] };
+}
+
+/**
+ * Manual "Refresh" button on GameDay Dashboard. syncWeekGames is already scoped to a single
+ * week — the daily crons (sync-games/sync-spreads) are only expensive because they loop it
+ * across all 18 weeks, not because the function itself is — so calling it for just the
+ * current week here is already the lightest real refresh: one week's worth of ESPN calls,
+ * no lock-threshold check, no grading (the standings rank doesn't need to be recomputed every
+ * time someone glances at a live score). Any logged-in user, not admin-gated — it only ever
+ * writes score/status/clock fields on games that already exist for that week.
+ */
+export async function refreshCurrentWeekScores(seasonId: number, week: number) {
+  const session = await auth0.getSession();
+  if (!session?.user) return { success: false, error: 'Not logged in' };
+
+  const [season] = await db.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1);
+  if (!season) return { success: false, error: 'Season not found' };
+
+  try {
+    await syncWeekGames(season.id, season.year, week);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to refresh scores' };
+  }
+}
+
 // --- Grading + standings ---
 
 /**

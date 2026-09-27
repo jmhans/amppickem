@@ -85,6 +85,10 @@ export const games = ampPickemSchema.table('games', {
   homeScore: integer('home_score'),
   awayScore: integer('away_score'),
   status: text('status'), // raw ESPN status.type.name, e.g. 'STATUS_FINAL'
+  // In-progress-only detail from the same ESPN status resource as `status` — both null before
+  // kickoff and once final (see GameDay Dashboard, app/gameday, the only place these are read).
+  period: integer('period'), // quarter number (1-4, 5+ for OT)
+  displayClock: text('display_clock'), // e.g. "8:42", ESPN-formatted
   isFinal: boolean('is_final').default(false).notNull(),
   espnGameId: text('espn_game_id').unique(),
   gameTime: timestamp('game_time'),
