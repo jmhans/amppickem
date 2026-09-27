@@ -47,7 +47,7 @@ export default function UserDisplay() {
         <div className="md:hidden relative">
           <button
             onClick={() => setUserMenuOpen(!userMenuOpen)}
-            className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-200 hover:bg-gray-300 transition-colors"
+            className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
             aria-label="User Menu"
           >
             <svg
@@ -64,34 +64,34 @@ export default function UserDisplay() {
           </button>
 
           {userMenuOpen && (
-            <div className="absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-20">
+            <div className="absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black dark:ring-gray-700 ring-opacity-5 z-20">
               <div className="py-1" role="menu">
-                <div className="px-4 py-2 text-sm text-gray-700 border-b border-gray-200">
+                <div className="px-4 py-2 text-sm text-gray-700 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700">
                   <div className="font-medium">{userName}</div>
                 </div>
 
                 {participants.length > 0 && (
                   <>
-                    <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <div className="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       My Entries
                     </div>
                     {participants.map((participant) => (
                       <Link
                         key={participant.id}
                         href={`/picks/${participant.id}`}
-                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
                         onClick={() => setUserMenuOpen(false)}
                       >
                         {participant.name}
                       </Link>
                     ))}
-                    <div className="border-t border-gray-200 my-1"></div>
+                    <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
                   </>
                 )}
 
                 <a
                   href="/auth/logout"
-                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
                 >
                   Logout
                 </a>
