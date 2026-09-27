@@ -98,9 +98,17 @@ function ResultBadge({ result }: { result: GameDayPick['result'] }) {
   return <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${classes}`}>{label}</span>;
 }
 
-/** Same idea as ResultBadge, styled softer (outline, title case) to read as "so far," not final. */
-function LiveStatusBadge({ result }: { result: LiveResult }) {
-  const label = result === 'win' ? 'Winning' : result === 'loss' ? 'Losing' : 'Push';
+/**
+ * Same idea as ResultBadge, styled softer (outline, title case) to read as "so far," not
+ * final. Shows a win-probability percentage when one's available (regulation play — see
+ * app/lib/live-projection.ts); falls back to plain "Winning"/"Losing"/"Push" text outside
+ * regulation (overtime), where that model doesn't apply but the game's still live.
+ */
+function LiveStatusBadge({ result, winProbability }: { result: LiveResult; winProbability: number | null }) {
+  const label =
+    winProbability != null
+      ? `${Math.round(winProbability * 100)}%`
+      : result === 'win' ? 'Winning' : result === 'loss' ? 'Losing' : 'Push';
   const classes =
     result === 'win'
       ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
@@ -125,12 +133,18 @@ function TeamRow({ team, score }: { team: string; score: number | null }) {
 function PickCard({ pick }: { pick: GameDayPick }) {
   const status = gameStatus(pick);
   // Once officially graded, that result wins outright. Until then, if the game has actually
-  // started, show where the pick currently stands — computed fresh from the live score, not
-  // stored anywhere. Gated on the game having started (not just "scores are non-null") in
-  // case ESPN ever reports 0-0 before kickoff rather than leaving scores null.
+  // started, show where the pick stands — preferring the forward-looking win probability
+  // (app/lib/live-projection.ts, regulation play only) over the raw current-score comparison,
+  // since those two can disagree (e.g. winning right now but the season-pace projection
+  // expects a fade) and the probability is the more informative signal. computeLiveResult
+  // (current score only) is the fallback for overtime, where the projection model doesn't
+  // apply but the game is still very much live. Gated on the game having started (not just
+  // "scores are non-null") in case ESPN ever reports 0-0 before kickoff rather than null.
   const gameStarted = status.live || pick.isFinal;
-  const liveResult = pick.result === 'pending' && gameStarted ? computeLiveResult(pick) : null;
-  const cardClasses = liveResult ? liveCardClasses(liveResult) : cardBorderClasses(pick.result);
+  const currentResult = pick.result === 'pending' && gameStarted ? computeLiveResult(pick) : null;
+  const winProbability = pick.result === 'pending' ? pick.liveWinProbability : null;
+  const liveLeaning: LiveResult | null = winProbability != null ? (winProbability >= 0.5 ? 'win' : 'loss') : currentResult;
+  const cardClasses = liveLeaning ? liveCardClasses(liveLeaning) : cardBorderClasses(pick.result);
 
   return (
     <div className={`rounded-lg border bg-white dark:bg-gray-800 p-2 shadow-sm ${cardClasses}`}>
@@ -139,7 +153,7 @@ function PickCard({ pick }: { pick: GameDayPick }) {
           {status.live && <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-red-600 animate-pulse" />}
           {status.text}
         </span>
-        {liveResult ? <LiveStatusBadge result={liveResult} /> : <ResultBadge result={pick.result} />}
+        {liveLeaning ? <LiveStatusBadge result={liveLeaning} winProbability={winProbability} /> : <ResultBadge result={pick.result} />}
       </div>
 
       <div className="mt-1.5 space-y-0.5">

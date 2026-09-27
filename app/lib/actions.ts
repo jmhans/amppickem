@@ -17,6 +17,7 @@ import { teamAbbrevFromFullName } from '@/app/lib/team-names';
 import { computeIncompletePicksForWeek } from '@/app/lib/picks-status';
 import { sendRecapEmail } from '@/app/lib/email';
 import { sendPushToParticipant } from '@/app/lib/push';
+import { computeSeasonPaces, projectWinProbability } from '@/app/lib/live-projection';
 import {
   computeParticipantWeekStats,
   computeWeeklyStandings,
@@ -442,6 +443,8 @@ export interface GameDayPick {
   pickType: PickType;
   selection: PickSelection;
   result: 'pending' | 'win' | 'loss' | 'push' | 'void';
+  /** Pr(this pick wins) — see app/lib/live-projection.ts. Null pregame, in overtime, or once officially graded (the graded result is exact, no need for a projection anymore). */
+  liveWinProbability: number | null;
 }
 
 export interface GameDayRank {
@@ -467,7 +470,7 @@ export async function getGameDayData(participantId: number, seasonId: number, we
   const auth = await requireCanEditParticipant(participantId);
   if (!auth.ok) return { rank: null, picks: [] };
 
-  const [pickRows, standings] = await Promise.all([
+  const [pickRows, standings, paces] = await Promise.all([
     db
       .select({
         pickId: picks.id,
@@ -492,6 +495,7 @@ export async function getGameDayData(participantId: number, seasonId: number, we
       .where(and(eq(picks.participantId, participantId), eq(picks.seasonId, seasonId), eq(picks.week, week)))
       .orderBy(asc(games.gameTime)),
     getWeeklyStandings(seasonId, week),
+    computeSeasonPaces(seasonId),
   ]);
 
   const mine = standings.find((r) => r.participantId === participantId);
@@ -499,7 +503,35 @@ export async function getGameDayData(participantId: number, seasonId: number, we
     ? { value: mine.rank, tied: standings.filter((r) => r.rank === mine.rank).length > 1, total: standings.length }
     : null;
 
-  return { rank, picks: pickRows as GameDayPick[] };
+  const pickList: GameDayPick[] = pickRows.map((row) => {
+    const liveWinProbability =
+      row.result === 'pending' && row.homeScore != null && row.awayScore != null
+        ? projectWinProbability(
+            {
+              homeTeam: row.homeTeam,
+              awayTeam: row.awayTeam,
+              homeScore: row.homeScore,
+              awayScore: row.awayScore,
+              period: row.period,
+              displayClock: row.displayClock,
+              pickType: row.pickType as PickType,
+              selection: row.selection as PickSelection,
+              spread: row.spread,
+              overUnder: row.overUnder,
+            },
+            paces,
+          )
+        : null;
+    return {
+      ...row,
+      pickType: row.pickType as PickType,
+      selection: row.selection as PickSelection,
+      result: row.result as GameDayPick['result'],
+      liveWinProbability,
+    };
+  });
+
+  return { rank, picks: pickList };
 }
 
 /**
