@@ -502,6 +502,30 @@ export async function getGameDayData(participantId: number, seasonId: number, we
   return { rank, picks: pickRows as GameDayPick[] };
 }
 
+/**
+ * Manual "Refresh" button on GameDay Dashboard. syncWeekGames is already scoped to a single
+ * week — the daily crons (sync-games/sync-spreads) are only expensive because they loop it
+ * across all 18 weeks, not because the function itself is — so calling it for just the
+ * current week here is already the lightest real refresh: one week's worth of ESPN calls,
+ * no lock-threshold check, no grading (the standings rank doesn't need to be recomputed every
+ * time someone glances at a live score). Any logged-in user, not admin-gated — it only ever
+ * writes score/status/clock fields on games that already exist for that week.
+ */
+export async function refreshCurrentWeekScores(seasonId: number, week: number) {
+  const session = await auth0.getSession();
+  if (!session?.user) return { success: false, error: 'Not logged in' };
+
+  const [season] = await db.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1);
+  if (!season) return { success: false, error: 'Season not found' };
+
+  try {
+    await syncWeekGames(season.id, season.year, week);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to refresh scores' };
+  }
+}
+
 // --- Grading + standings ---
 
 /**

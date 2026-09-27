@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/sync-spreads",
       "schedule": "0 0 * * 3"
+    },
+    {
+      "path": "/api/cron/sync-scores",
+      "schedule": "*/2 * * * *"
     }
   ]
 }
