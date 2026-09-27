@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "build:with-migrate": "npx drizzle-kit migrate && next build",
+    "vercel-build": "node scripts/vercel-build.js",
     "start": "next start",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",

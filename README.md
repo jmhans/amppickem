@@ -17,9 +17,11 @@ Requires a `.env.local` with `POSTGRES_URL`, `POSTGRES_URL_DEV`, `AUTH0_SECRET`,
 
 ```bash
 npm run db:generate   # generate a migration from app/lib/db/schema.ts
-npm run db:migrate    # apply migrations
+npm run db:migrate    # apply migrations (targets POSTGRES_URL_DEV unless NODE_ENV=production)
 npm run db:studio     # browse the DB
 ```
+
+Production migrations run automatically on deploy: `scripts/vercel-build.js` is Vercel's auto-detected `vercel-build` script (takes over from `next build` — Vercel uses it instead if present, unless the project's Build Command is manually overridden in Settings). It runs `drizzle-kit migrate` before the build, but only when `VERCEL_ENV === 'production'` — deliberately NOT keyed off `NODE_ENV`, which Vercel sets to `'production'` for every build including preview deployments, so anything checking `NODE_ENV` alone would migrate the production database on every branch push. Preview/dev builds skip migrations entirely and just build.
 
 ## How it works
 
