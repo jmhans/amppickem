@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { getGameDayData, refreshCurrentWeekScores, type GameDayData, type GameDayPick } from '@/app/lib/actions';
 import { teamLogoUrl } from '@/app/lib/team-logos';
+import { gradeSpreadPick, gradeTotalPick } from '@/app/lib/grading';
 
 // The underlying scores refresh on their own via api/cron/sync-scores (every couple minutes,
 // current week only) — this poll just re-reads whatever that last wrote, so it stays cheap
@@ -39,6 +40,24 @@ function gameStatus(pick: GameDayPick): { text: string; live: boolean } {
   return { text: 'TBD', live: false };
 }
 
+type LiveResult = 'win' | 'loss' | 'push';
+
+/**
+ * "If this game ended right this second, did the pick hit?" — reuses the exact same grading
+ * functions admin/results uses for the real, final grade, just fed the current (not final)
+ * score. Only meaningful once both scores exist; a pregame pick (no score yet) has nothing to
+ * project from.
+ */
+function computeLiveResult(pick: GameDayPick): LiveResult | null {
+  if (pick.homeScore == null || pick.awayScore == null) return null;
+  if (pick.pickType === 'spread') {
+    if (pick.spread == null) return null;
+    return gradeSpreadPick(pick.selection as 'home' | 'away', pick.spread, pick.homeScore, pick.awayScore);
+  }
+  if (pick.overUnder == null) return null;
+  return gradeTotalPick(pick.selection as 'over' | 'under', pick.overUnder, pick.homeScore, pick.awayScore);
+}
+
 function cardBorderClasses(result: GameDayPick['result']): string {
   switch (result) {
     case 'win':
@@ -53,6 +72,20 @@ function cardBorderClasses(result: GameDayPick['result']): string {
   }
 }
 
+// Live (unofficial, in-progress) shading gets a background tint on top of the border color —
+// a stronger visual cue than the official graded state uses, since "currently winning" is
+// exactly the thing someone glancing at this page mid-game wants to spot at a glance.
+function liveCardClasses(result: LiveResult): string {
+  switch (result) {
+    case 'win':
+      return 'border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/20';
+    case 'loss':
+      return 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20';
+    case 'push':
+      return 'border-gray-300 dark:border-gray-600';
+  }
+}
+
 function ResultBadge({ result }: { result: GameDayPick['result'] }) {
   if (result === 'pending') return null;
   const label = result === 'win' ? 'WIN' : result === 'loss' ? 'LOSS' : result === 'push' ? 'PUSH' : 'VOID';
@@ -62,6 +95,18 @@ function ResultBadge({ result }: { result: GameDayPick['result'] }) {
       : result === 'loss'
         ? 'bg-red-600 text-white'
         : 'bg-gray-400 text-white';
+  return <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${classes}`}>{label}</span>;
+}
+
+/** Same idea as ResultBadge, styled softer (outline, title case) to read as "so far," not final. */
+function LiveStatusBadge({ result }: { result: LiveResult }) {
+  const label = result === 'win' ? 'Winning' : result === 'loss' ? 'Losing' : 'Push';
+  const classes =
+    result === 'win'
+      ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+      : result === 'loss'
+        ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+        : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
   return <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${classes}`}>{label}</span>;
 }
 
@@ -79,14 +124,22 @@ function TeamRow({ team, score }: { team: string; score: number | null }) {
 
 function PickCard({ pick }: { pick: GameDayPick }) {
   const status = gameStatus(pick);
+  // Once officially graded, that result wins outright. Until then, if the game has actually
+  // started, show where the pick currently stands — computed fresh from the live score, not
+  // stored anywhere. Gated on the game having started (not just "scores are non-null") in
+  // case ESPN ever reports 0-0 before kickoff rather than leaving scores null.
+  const gameStarted = status.live || pick.isFinal;
+  const liveResult = pick.result === 'pending' && gameStarted ? computeLiveResult(pick) : null;
+  const cardClasses = liveResult ? liveCardClasses(liveResult) : cardBorderClasses(pick.result);
+
   return (
-    <div className={`rounded-lg border bg-white dark:bg-gray-800 p-2 shadow-sm ${cardBorderClasses(pick.result)}`}>
+    <div className={`rounded-lg border bg-white dark:bg-gray-800 p-2 shadow-sm ${cardClasses}`}>
       <div className="flex items-center justify-between gap-1">
         <span className={`flex min-w-0 items-center gap-1 truncate text-[10px] font-medium ${status.live ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
           {status.live && <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-red-600 animate-pulse" />}
           {status.text}
         </span>
-        <ResultBadge result={pick.result} />
+        {liveResult ? <LiveStatusBadge result={liveResult} /> : <ResultBadge result={pick.result} />}
       </div>
 
       <div className="mt-1.5 space-y-0.5">
