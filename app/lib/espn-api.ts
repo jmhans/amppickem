@@ -9,6 +9,14 @@ export interface EspnGame {
   gameTime: Date;
   spread: number | null; // home line, negative = home favored
   overUnder: number | null;
+  // Live market line/pricing — see schema.ts's comment on games.liveSpread for why these are
+  // separate from spread/overUnder above and never gated by lock state.
+  liveSpread: number | null;
+  liveOverUnder: number | null;
+  liveSpreadHomeOdds: number | null;
+  liveSpreadAwayOdds: number | null;
+  liveOverOdds: number | null;
+  liveUnderOdds: number | null;
   homeScore: number | null;
   awayScore: number | null;
   status: string | null;
@@ -91,6 +99,12 @@ async function fetchGameFromCore(eventId: string, teamAbbrevs: Map<string, strin
       ? (oddsList.items.find((o: any) => o.provider?.priority === 1) ?? oddsList.items[0])
       : null;
 
+    // Home's own current signed line, e.g. "+1.5" or "-1.5" — already in the same
+    // home-favored-negative convention `spread`/`liveSpread` use, so no sign reconstruction
+    // needed from the unsigned top-level odds.spread + favorite/underdog flags.
+    const liveSpreadStr = odds?.homeTeamOdds?.current?.pointSpread?.american;
+    const liveSpread = liveSpreadStr != null ? Number(liveSpreadStr) : null;
+
     return {
       espnGameId: eventId,
       homeTeam: (homeTeamId && teamAbbrevs.get(homeTeamId)) ?? 'UNK',
@@ -98,6 +112,12 @@ async function fetchGameFromCore(eventId: string, teamAbbrevs: Map<string, strin
       gameTime: new Date(comp.date),
       spread: odds?.spread ?? null,
       overUnder: odds?.overUnder ?? null,
+      liveSpread: Number.isFinite(liveSpread) ? liveSpread : null,
+      liveOverUnder: odds?.overUnder ?? null,
+      liveSpreadHomeOdds: odds?.homeTeamOdds?.spreadOdds ?? null,
+      liveSpreadAwayOdds: odds?.awayTeamOdds?.spreadOdds ?? null,
+      liveOverOdds: odds?.overOdds ?? null,
+      liveUnderOdds: odds?.underOdds ?? null,
       homeScore: homeScore?.value != null ? Number(homeScore.value) : null,
       awayScore: awayScore?.value != null ? Number(awayScore.value) : null,
       status: status?.type?.name ?? null,
@@ -159,6 +179,12 @@ export async function syncWeekGames(
         awayTeam: eg.awayTeam,
         spread: eg.spread,
         overUnder: eg.overUnder,
+        liveSpread: eg.liveSpread,
+        liveOverUnder: eg.liveOverUnder,
+        liveSpreadHomeOdds: eg.liveSpreadHomeOdds,
+        liveSpreadAwayOdds: eg.liveSpreadAwayOdds,
+        liveOverOdds: eg.liveOverOdds,
+        liveUnderOdds: eg.liveUnderOdds,
         homeScore: eg.homeScore,
         awayScore: eg.awayScore,
         status: eg.status,
@@ -188,6 +214,15 @@ export async function syncWeekGames(
         displayClock: eg.displayClock,
         isFinal: eg.isFinal,
         gameTime: eg.gameTime,
+        // Unlike spread/overUnder below, the live* columns always refresh regardless of lock
+        // state — they track the market, not the pool's frozen grading line (see schema.ts).
+        // Same "don't null out on a momentary gap" guard as spread/overUnder gets.
+        liveSpread: eg.liveSpread ?? row.liveSpread,
+        liveOverUnder: eg.liveOverUnder ?? row.liveOverUnder,
+        liveSpreadHomeOdds: eg.liveSpreadHomeOdds ?? row.liveSpreadHomeOdds,
+        liveSpreadAwayOdds: eg.liveSpreadAwayOdds ?? row.liveSpreadAwayOdds,
+        liveOverOdds: eg.liveOverOdds ?? row.liveOverOdds,
+        liveUnderOdds: eg.liveUnderOdds ?? row.liveUnderOdds,
         // Never overwrite a locked line. Never null out an existing unlocked
         // line just because ESPN's odds[] is momentarily absent this fetch.
         ...(isLocked

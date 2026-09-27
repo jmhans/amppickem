@@ -17,6 +17,7 @@ import { teamAbbrevFromFullName } from '@/app/lib/team-names';
 import { computeIncompletePicksForWeek } from '@/app/lib/picks-status';
 import { sendRecapEmail } from '@/app/lib/email';
 import { sendPushToParticipant } from '@/app/lib/push';
+import { computeSeasonPaces, projectWinProbability } from '@/app/lib/live-projection';
 import {
   computeParticipantWeekStats,
   computeWeeklyStandings,
@@ -442,6 +443,8 @@ export interface GameDayPick {
   pickType: PickType;
   selection: PickSelection;
   result: 'pending' | 'win' | 'loss' | 'push' | 'void';
+  /** Pr(this pick wins) — see app/lib/live-projection.ts. Null pregame, in overtime, or once officially graded (the graded result is exact, no need for a projection anymore). */
+  liveWinProbability: number | null;
 }
 
 export interface GameDayRank {
@@ -467,7 +470,7 @@ export async function getGameDayData(participantId: number, seasonId: number, we
   const auth = await requireCanEditParticipant(participantId);
   if (!auth.ok) return { rank: null, picks: [] };
 
-  const [pickRows, standings] = await Promise.all([
+  const [pickRows, standings, paces] = await Promise.all([
     db
       .select({
         pickId: picks.id,
@@ -483,6 +486,12 @@ export async function getGameDayData(participantId: number, seasonId: number, we
         awayScore: games.awayScore,
         spread: games.spread,
         overUnder: games.overUnder,
+        liveSpread: games.liveSpread,
+        liveOverUnder: games.liveOverUnder,
+        liveSpreadHomeOdds: games.liveSpreadHomeOdds,
+        liveSpreadAwayOdds: games.liveSpreadAwayOdds,
+        liveOverOdds: games.liveOverOdds,
+        liveUnderOdds: games.liveUnderOdds,
         pickType: picks.pickType,
         selection: picks.selection,
         result: picks.result,
@@ -492,6 +501,7 @@ export async function getGameDayData(participantId: number, seasonId: number, we
       .where(and(eq(picks.participantId, participantId), eq(picks.seasonId, seasonId), eq(picks.week, week)))
       .orderBy(asc(games.gameTime)),
     getWeeklyStandings(seasonId, week),
+    computeSeasonPaces(seasonId),
   ]);
 
   const mine = standings.find((r) => r.participantId === participantId);
@@ -499,7 +509,44 @@ export async function getGameDayData(participantId: number, seasonId: number, we
     ? { value: mine.rank, tied: standings.filter((r) => r.rank === mine.rank).length > 1, total: standings.length }
     : null;
 
-  return { rank, picks: pickRows as GameDayPick[] };
+  const pickList: GameDayPick[] = pickRows.map((row) => {
+    // projectWinProbability owns all of pregame (live-odds-anchored)/in-progress
+    // (pace-based)/overtime (null)/final (null) branching internally.
+    const liveWinProbability =
+      row.result === 'pending'
+        ? projectWinProbability(
+            {
+              homeTeam: row.homeTeam,
+              awayTeam: row.awayTeam,
+              homeScore: row.homeScore,
+              awayScore: row.awayScore,
+              isFinal: row.isFinal,
+              period: row.period,
+              displayClock: row.displayClock,
+              pickType: row.pickType as PickType,
+              selection: row.selection as PickSelection,
+              spread: row.spread,
+              overUnder: row.overUnder,
+              liveSpread: row.liveSpread,
+              liveOverUnder: row.liveOverUnder,
+              liveSpreadHomeOdds: row.liveSpreadHomeOdds,
+              liveSpreadAwayOdds: row.liveSpreadAwayOdds,
+              liveOverOdds: row.liveOverOdds,
+              liveUnderOdds: row.liveUnderOdds,
+            },
+            paces,
+          )
+        : null;
+    return {
+      ...row,
+      pickType: row.pickType as PickType,
+      selection: row.selection as PickSelection,
+      result: row.result as GameDayPick['result'],
+      liveWinProbability,
+    };
+  });
+
+  return { rank, picks: pickList };
 }
 
 /**

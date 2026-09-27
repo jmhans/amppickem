@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { getGameDayData, refreshCurrentWeekScores, type GameDayData, type GameDayPick } from '@/app/lib/actions';
 import { teamLogoUrl } from '@/app/lib/team-logos';
+import { gradeSpreadPick, gradeTotalPick } from '@/app/lib/grading';
 
 // The underlying scores refresh on their own via api/cron/sync-scores (every couple minutes,
 // current week only) — this poll just re-reads whatever that last wrote, so it stays cheap
@@ -39,6 +41,37 @@ function gameStatus(pick: GameDayPick): { text: string; live: boolean } {
   return { text: 'TBD', live: false };
 }
 
+type LiveResult = 'win' | 'loss' | 'push';
+// Adds 'neutral' on top of LiveResult — used only for the probability-banded coloring below;
+// 'push' still only ever comes from the overtime current-score fallback, which has no
+// probability to band in the first place.
+type LiveLeaning = LiveResult | 'neutral';
+
+// A probability close to 50% isn't meaningfully "winning" or "losing" — shading it as strongly
+// as a near-certain outcome overstates how much the pick actually favors one side. Only shade
+// once it clears a real edge either way; leave the middle band visually neutral.
+function leaningFromProbability(p: number): 'win' | 'loss' | 'neutral' {
+  if (p > 0.6) return 'win';
+  if (p < 0.4) return 'loss';
+  return 'neutral';
+}
+
+/**
+ * "If this game ended right this second, did the pick hit?" — reuses the exact same grading
+ * functions admin/results uses for the real, final grade, just fed the current (not final)
+ * score. Only meaningful once both scores exist; a pregame pick (no score yet) has nothing to
+ * project from.
+ */
+function computeLiveResult(pick: GameDayPick): LiveResult | null {
+  if (pick.homeScore == null || pick.awayScore == null) return null;
+  if (pick.pickType === 'spread') {
+    if (pick.spread == null) return null;
+    return gradeSpreadPick(pick.selection as 'home' | 'away', pick.spread, pick.homeScore, pick.awayScore);
+  }
+  if (pick.overUnder == null) return null;
+  return gradeTotalPick(pick.selection as 'over' | 'under', pick.overUnder, pick.homeScore, pick.awayScore);
+}
+
 function cardBorderClasses(result: GameDayPick['result']): string {
   switch (result) {
     case 'win':
@@ -53,6 +86,22 @@ function cardBorderClasses(result: GameDayPick['result']): string {
   }
 }
 
+// Live (unofficial, in-progress) shading gets a background tint on top of the border color —
+// a stronger visual cue than the official graded state uses, since "currently winning" is
+// exactly the thing someone glancing at this page mid-game wants to spot at a glance. 'neutral'
+// (see leaningFromProbability) intentionally gets the same plain treatment as 'push'.
+function liveCardClasses(result: LiveLeaning): string {
+  switch (result) {
+    case 'win':
+      return 'border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/20';
+    case 'loss':
+      return 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20';
+    case 'push':
+    case 'neutral':
+      return 'border-gray-300 dark:border-gray-600';
+  }
+}
+
 function ResultBadge({ result }: { result: GameDayPick['result'] }) {
   if (result === 'pending') return null;
   const label = result === 'win' ? 'WIN' : result === 'loss' ? 'LOSS' : result === 'push' ? 'PUSH' : 'VOID';
@@ -62,6 +111,27 @@ function ResultBadge({ result }: { result: GameDayPick['result'] }) {
       : result === 'loss'
         ? 'bg-red-600 text-white'
         : 'bg-gray-400 text-white';
+  return <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${classes}`}>{label}</span>;
+}
+
+/**
+ * Same idea as ResultBadge, styled softer (outline, title case) to read as "so far," not
+ * final. Shows a win-probability percentage when one's available (see
+ * app/lib/live-projection.ts) — still shown even in the neutral 40-60% band, just not colored
+ * red/green there (see leaningFromProbability); falls back to plain "Winning"/"Losing"/"Push"
+ * text outside regulation (overtime), where that model doesn't apply but the game's still live.
+ */
+function LiveStatusBadge({ leaning, winProbability }: { leaning: LiveLeaning; winProbability: number | null }) {
+  const label =
+    winProbability != null
+      ? `${Math.round(winProbability * 100)}%`
+      : leaning === 'win' ? 'Winning' : leaning === 'loss' ? 'Losing' : 'Push';
+  const classes =
+    leaning === 'win'
+      ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+      : leaning === 'loss'
+        ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+        : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
   return <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${classes}`}>{label}</span>;
 }
 
@@ -79,14 +149,28 @@ function TeamRow({ team, score }: { team: string; score: number | null }) {
 
 function PickCard({ pick }: { pick: GameDayPick }) {
   const status = gameStatus(pick);
+  // Once officially graded, that result wins outright. Until then, prefer the forward-looking
+  // win probability (app/lib/live-projection.ts) over the raw current-score comparison — those
+  // two can disagree once the game's underway (e.g. winning right now but the season-pace
+  // projection expects a fade), and the probability is the more informative signal. It's also
+  // shown PREGAME (a flat 50% — see live-projection.ts for why it's not the pace model), so an
+  // unstarted pick gets a real number instead of nothing. computeLiveResult (current score
+  // only, gated on the game having actually started) is purely the overtime fallback, where
+  // the projection model doesn't apply but the game is still very much live.
+  const gameStarted = status.live || pick.isFinal;
+  const currentResult = pick.result === 'pending' && gameStarted ? computeLiveResult(pick) : null;
+  const winProbability = pick.result === 'pending' ? pick.liveWinProbability : null;
+  const liveLeaning: LiveLeaning | null = winProbability != null ? leaningFromProbability(winProbability) : currentResult;
+  const cardClasses = liveLeaning ? liveCardClasses(liveLeaning) : cardBorderClasses(pick.result);
+
   return (
-    <div className={`rounded-lg border bg-white dark:bg-gray-800 p-2 shadow-sm ${cardBorderClasses(pick.result)}`}>
+    <div className={`rounded-lg border bg-white dark:bg-gray-800 p-2 shadow-sm ${cardClasses}`}>
       <div className="flex items-center justify-between gap-1">
         <span className={`flex min-w-0 items-center gap-1 truncate text-[10px] font-medium ${status.live ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
           {status.live && <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-red-600 animate-pulse" />}
           {status.text}
         </span>
-        <ResultBadge result={pick.result} />
+        {liveLeaning ? <LiveStatusBadge leaning={liveLeaning} winProbability={winProbability} /> : <ResultBadge result={pick.result} />}
       </div>
 
       <div className="mt-1.5 space-y-0.5">
@@ -164,6 +248,10 @@ export default function GameDayClient({
         </div>
         {data && <RankBadge rank={data.rank} />}
       </div>
+
+      <Link href="/gameday/methodology" className="inline-block text-xs text-blue-600 hover:text-blue-500">
+        How the live win % is calculated →
+      </Link>
 
       {loading ? (
         <p className="text-sm text-gray-500">Loading…</p>
