@@ -128,8 +128,9 @@ export function minutesRemainingInRegulation(period: number | null, displayClock
 export interface LiveProjectionInput {
   homeTeam: string;
   awayTeam: string;
-  homeScore: number;
-  awayScore: number;
+  homeScore: number | null;
+  awayScore: number | null;
+  isFinal: boolean;
   period: number | null;
   displayClock: string | null;
   pickType: 'spread' | 'over_under';
@@ -143,12 +144,36 @@ export interface LiveProjectionInput {
  * blended season/league pace (see computeSeasonPaces) x minutes remaining, stdev scaled off
  * FULL_GAME_STDEV by sqrt(minutesRemaining / 60). Margin (spread) or total (O/U) is then just
  * the sum/difference of two independent normals, so it reduces to a single standard
- * Pr(X > threshold) via the normal CDF. Returns null outside regulation, or when the relevant
- * line is missing.
+ * Pr(X > threshold) via the normal CDF.
+ *
+ * Pregame (period 0/null, no score yet) is treated as a 0-0 score with a full 60 minutes
+ * remaining — the pregame line itself IS the fair-value starting point, and this collapses to
+ * exactly the same formula with the current-score term dropping out, so a not-yet-started pick
+ * gets a real probability too rather than nothing. Returns null once the game is officially
+ * final (the real grade takes over) or in overtime (period > 4 — this simple model doesn't
+ * attempt to handle OT's different win conditions), or when the relevant line is missing.
  */
 export function projectWinProbability(input: LiveProjectionInput, paces: SeasonPaces): number | null {
-  const minsRemaining = minutesRemainingInRegulation(input.period, input.displayClock);
-  if (minsRemaining == null) return null;
+  if (input.isFinal) return null;
+
+  const period = input.period ?? 0;
+  if (period > 4) return null; // overtime — out of scope for this model
+
+  let homeScore: number;
+  let awayScore: number;
+  let minsRemaining: number;
+
+  if (period < 1) {
+    homeScore = 0;
+    awayScore = 0;
+    minsRemaining = 60;
+  } else {
+    const remaining = minutesRemainingInRegulation(period, input.displayClock);
+    if (remaining == null || input.homeScore == null || input.awayScore == null) return null;
+    homeScore = input.homeScore;
+    awayScore = input.awayScore;
+    minsRemaining = remaining;
+  }
 
   const homePace = blendedPace(input.homeTeam, paces);
   const awayPace = blendedPace(input.awayTeam, paces);
@@ -162,13 +187,13 @@ export function projectWinProbability(input: LiveProjectionInput, paces: SeasonP
   if (input.pickType === 'spread') {
     if (input.spread == null) return null;
     // Home covers when margin > -spread — same convention gradeSpreadPick uses.
-    const meanMargin = (input.homeScore - input.awayScore) + (meanHomeRemaining - meanAwayRemaining);
+    const meanMargin = (homeScore - awayScore) + (meanHomeRemaining - meanAwayRemaining);
     const probHomeCovers = normalCdf((meanMargin + input.spread) / combinedSd);
     return input.selection === 'home' ? probHomeCovers : 1 - probHomeCovers;
   }
 
   if (input.overUnder == null) return null;
-  const meanTotal = (input.homeScore + input.awayScore) + (meanHomeRemaining + meanAwayRemaining);
+  const meanTotal = (homeScore + awayScore) + (meanHomeRemaining + meanAwayRemaining);
   const probOver = normalCdf((meanTotal - input.overUnder) / combinedSd);
   return input.selection === 'over' ? probOver : 1 - probOver;
 }

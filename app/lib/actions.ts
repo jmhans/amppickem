@@ -504,14 +504,17 @@ export async function getGameDayData(participantId: number, seasonId: number, we
     : null;
 
   const pickList: GameDayPick[] = pickRows.map((row) => {
+    // projectWinProbability itself handles "pregame" (period 0/null, no score) as a 0-0 score
+    // with a full 60 minutes remaining — no need to gate on scores being non-null here.
     const liveWinProbability =
-      row.result === 'pending' && row.homeScore != null && row.awayScore != null
+      row.result === 'pending'
         ? projectWinProbability(
             {
               homeTeam: row.homeTeam,
               awayTeam: row.awayTeam,
               homeScore: row.homeScore,
               awayScore: row.awayScore,
+              isFinal: row.isFinal,
               period: row.period,
               displayClock: row.displayClock,
               pickType: row.pickType as PickType,

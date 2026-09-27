@@ -133,14 +133,15 @@ function TeamRow({ team, score }: { team: string; score: number | null }) {
 
 function PickCard({ pick }: { pick: GameDayPick }) {
   const status = gameStatus(pick);
-  // Once officially graded, that result wins outright. Until then, if the game has actually
-  // started, show where the pick stands — preferring the forward-looking win probability
-  // (app/lib/live-projection.ts, regulation play only) over the raw current-score comparison,
-  // since those two can disagree (e.g. winning right now but the season-pace projection
-  // expects a fade) and the probability is the more informative signal. computeLiveResult
-  // (current score only) is the fallback for overtime, where the projection model doesn't
-  // apply but the game is still very much live. Gated on the game having started (not just
-  // "scores are non-null") in case ESPN ever reports 0-0 before kickoff rather than null.
+  // Once officially graded, that result wins outright. Until then, prefer the forward-looking
+  // win probability (app/lib/live-projection.ts) over the raw current-score comparison — those
+  // two can disagree once the game's underway (e.g. winning right now but the season-pace
+  // projection expects a fade), and the probability is the more informative signal. It's also
+  // shown PREGAME — projectWinProbability treats "hasn't started" as a 0-0 score with a full
+  // 60 minutes left, i.e. the pregame line itself, so an unstarted pick gets a real number
+  // instead of nothing. computeLiveResult (current score only, gated on the game having
+  // actually started) is purely the overtime fallback, where the projection model doesn't
+  // apply but the game is still very much live.
   const gameStarted = status.live || pick.isFinal;
   const currentResult = pick.result === 'pending' && gameStarted ? computeLiveResult(pick) : null;
   const winProbability = pick.result === 'pending' ? pick.liveWinProbability : null;
