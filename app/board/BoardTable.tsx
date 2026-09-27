@@ -19,11 +19,14 @@ type Outcome = 'home' | 'away' | 'over' | 'under' | 'push' | null;
 // Cell color reflects whether THIS side actually covered/hit — independent of who picked it,
 // so an empty cell for a losing side still reads at a glance.
 function cellClasses(winner: Outcome, thisSide: 'home' | 'away' | 'over' | 'under'): string {
+  // Dark mode needs noticeably higher opacity than light mode's pastel -100 washes do — a
+  // dark shade at low opacity on top of the table's own bg-gray-800 reads as barely-there,
+  // not as a distinct win/loss/push tint.
   if (winner == null) return 'bg-gray-50 dark:bg-gray-800/50';
-  if (winner === 'push') return 'bg-yellow-100 dark:bg-yellow-900/30';
+  if (winner === 'push') return 'bg-yellow-100 dark:bg-yellow-800/60';
   return winner === thisSide
-    ? 'bg-green-100 dark:bg-green-900/30'
-    : 'bg-red-100 dark:bg-red-900/30';
+    ? 'bg-green-100 dark:bg-green-800/60'
+    : 'bg-red-100 dark:bg-red-800/60';
 }
 
 function PickList({ picks }: { picks: BoardPickEntry[] }) {
@@ -50,46 +53,64 @@ export default function BoardTable({ rows }: { rows: BoardGameRow[] }) {
       <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
         <thead className="bg-gray-50 dark:bg-gray-700">
           <tr>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Kickoff</th>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Matchup</th>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Line</th>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">O/U</th>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Away</th>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Home</th>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Under</th>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Over</th>
+            <th className="hidden sm:table-cell px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Kickoff</th>
+            <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Matchup</th>
+            <th className="hidden sm:table-cell px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Line</th>
+            <th className="hidden sm:table-cell px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">O/U</th>
+            <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Away</th>
+            <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Home</th>
+            <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Under</th>
+            <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Over</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
           {rows.map((g) => (
             <tr key={g.id}>
-              <td className="px-3 py-2 align-top whitespace-nowrap text-gray-500 dark:text-gray-400">
+              <td className="hidden sm:table-cell px-3 py-2 align-top whitespace-nowrap text-gray-500 dark:text-gray-400">
                 {formatKickoff(g.gameTime)}
                 {g.isFinal && (
                   <div className="text-xs font-medium text-gray-400">Final {g.awayScore}-{g.homeScore}</div>
                 )}
               </td>
-              <td className="px-3 py-2 align-top whitespace-nowrap text-gray-900 dark:text-white">
-                {teamFullName(g.awayTeam)}<br />@ {teamFullName(g.homeTeam)}
+              <td className="px-2 sm:px-3 py-2 align-top text-gray-900 dark:text-white">
+                <div className="whitespace-nowrap">
+                  {teamFullName(g.awayTeam)}<br />@ {teamFullName(g.homeTeam)}
+                </div>
+                {/* sm and up: Kickoff/Line/O/U are their own columns — this is the mobile-only fold-in,
+                    so small screens keep one narrow "game info" column instead of four, leaving more
+                    room for the four pick-list columns that actually matter at a glance. */}
+                <div className="sm:hidden mt-1 space-y-0.5 text-[11px] font-normal text-gray-500 dark:text-gray-400">
+                  <div>
+                    {formatKickoff(g.gameTime)}
+                    {g.isFinal && <span className="font-medium"> · Final {g.awayScore}-{g.homeScore}</span>}
+                  </div>
+                  <div className="tabular-nums">
+                    Line {g.spread ?? '-'}
+                    {g.actualMargin != null && ` ${formatBracket(g.actualMargin)}`}
+                    {' · O/U '}
+                    {g.overUnder ?? '-'}
+                    {g.actualTotal != null && ` [${g.actualTotal}]`}
+                  </div>
+                </div>
               </td>
-              <td className="px-3 py-2 align-top tabular-nums text-gray-700 dark:text-gray-300">
+              <td className="hidden sm:table-cell px-3 py-2 align-top tabular-nums text-gray-700 dark:text-gray-300">
                 {g.spread ?? '-'}
                 {g.actualMargin != null && <div className="text-xs text-gray-400">{formatBracket(g.actualMargin)}</div>}
               </td>
-              <td className="px-3 py-2 align-top tabular-nums text-gray-700 dark:text-gray-300">
+              <td className="hidden sm:table-cell px-3 py-2 align-top tabular-nums text-gray-700 dark:text-gray-300">
                 {g.overUnder ?? '-'}
                 {g.actualTotal != null && <div className="text-xs text-gray-400">[{g.actualTotal}]</div>}
               </td>
-              <td className={`px-3 py-2 align-top ${cellClasses(g.spreadWinner, 'away')}`}>
+              <td className={`px-2 sm:px-3 py-2 align-top ${cellClasses(g.spreadWinner, 'away')}`}>
                 <PickList picks={g.awayPicks} />
               </td>
-              <td className={`px-3 py-2 align-top ${cellClasses(g.spreadWinner, 'home')}`}>
+              <td className={`px-2 sm:px-3 py-2 align-top ${cellClasses(g.spreadWinner, 'home')}`}>
                 <PickList picks={g.homePicks} />
               </td>
-              <td className={`px-3 py-2 align-top ${cellClasses(g.totalWinner, 'under')}`}>
+              <td className={`px-2 sm:px-3 py-2 align-top ${cellClasses(g.totalWinner, 'under')}`}>
                 <PickList picks={g.underPicks} />
               </td>
-              <td className={`px-3 py-2 align-top ${cellClasses(g.totalWinner, 'over')}`}>
+              <td className={`px-2 sm:px-3 py-2 align-top ${cellClasses(g.totalWinner, 'over')}`}>
                 <PickList picks={g.overPicks} />
               </td>
             </tr>
