@@ -78,13 +78,18 @@ export interface StandingsTotals {
   winPct: number;
 }
 
+function calculateWinPct(wins: number, losses: number, draws: number): number {
+  const decisions = wins + losses + draws;
+  return decisions > 0 ? (wins + 0.5 * draws) / decisions : 0;
+}
+
 function sumStats(stats: ParticipantWeekStats[], participantId: number): StandingsTotals {
   const mine = stats.filter((s) => s.participantId === participantId);
   const wins = mine.reduce((a, s) => a + s.wins, 0);
   const losses = mine.reduce((a, s) => a + s.losses, 0);
   const draws = mine.reduce((a, s) => a + s.draws, 0);
   const lostPicks = mine.reduce((a, s) => a + s.lostPicks, 0);
-  return { participantId, wins, losses, draws, lostPicks, winPct: wins + losses > 0 ? wins / (wins + losses) : 0 };
+  return { participantId, wins, losses, draws, lostPicks, winPct: calculateWinPct(wins, losses, draws) };
 }
 
 // Wins desc, losses asc, winPct desc — same tiebreak as actions.ts's compareStandings.
@@ -116,7 +121,7 @@ export function computeWeeklyStandings(weekStats: ParticipantWeekStats[], week: 
   const totals = participantIds.map((id) => {
     const row = weekStats.find((s) => s.participantId === id && s.week === week);
     return row
-      ? { participantId: id, wins: row.wins, losses: row.losses, draws: row.draws, lostPicks: row.lostPicks, winPct: row.wins + row.losses > 0 ? row.wins / (row.wins + row.losses) : 0 }
+      ? { participantId: id, wins: row.wins, losses: row.losses, draws: row.draws, lostPicks: row.lostPicks, winPct: calculateWinPct(row.wins, row.losses, row.draws) }
       : { participantId: id, wins: 0, losses: 0, draws: 0, lostPicks: 0, winPct: 0 };
   });
   const sorted = [...totals].sort(compareTotals);
@@ -200,12 +205,7 @@ export function computeSeasonStandings(
   const leaderWins = current[0]?.totals.wins ?? 0;
   const leaderLosses = current[0]?.totals.losses ?? 0;
 
-  // "Since last week" means the last fully-complete week strictly before uptoWeek —
-  // whether or not uptoWeek itself is complete yet.
-  const completedWeeksBeforeUpto = Object.keys(weekComplete)
-    .map(Number)
-    .filter((w) => w < uptoWeek && weekComplete[w]);
-  const previousWeek = completedWeeksBeforeUpto.length > 0 ? Math.max(...completedWeeksBeforeUpto) : null;
+  const previousWeek = weekComplete[uptoWeek - 1] !== undefined ? uptoWeek - 1 : null;
   const previous = previousWeek != null ? computeStandingsForWeeks(weekStats, participantIds, previousWeek) : null;
   const previousRankById = new Map(previous?.map((r) => [r.totals.participantId, r.rank]) ?? []);
 
