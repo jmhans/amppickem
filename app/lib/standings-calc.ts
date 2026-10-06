@@ -154,12 +154,14 @@ export function computeSkins(
   const skins = new Map<number, number[]>();
   for (const [week, stats] of byWeek) {
     if (stats.length === 0) continue;
-    const maxWins = Math.max(...stats.map((s) => s.wins));
-    const top = stats.filter((s) => s.wins === maxWins).map((s) => s.participantId);
-    if (maxWins === picksPerWeek) {
-      skins.set(week, top); // perfect week(s) — everyone who went 6-0 gets a skin
+    const maxWinPct = Math.max(...stats.map((s) => calculateWinPct(s.wins, s.losses, s.draws)));
+    const top = stats
+      .filter((s) => calculateWinPct(s.wins, s.losses, s.draws) === maxWinPct)
+    const perfectWeek = top.filter((s) => s.wins === picksPerWeek);
+    if (maxWinPct === 1 && perfectWeek.length > 0) {
+      skins.set(week, perfectWeek.map((s) => s.participantId)); // perfect week(s) — everyone who went 6-0 gets a skin
     } else if (top.length === 1) {
-      skins.set(week, top); // sole best (non-perfect) record — one skin
+      skins.set(week, top.map((s) => s.participantId)); // sole best (non-perfect) record — one skin
     } else {
       skins.set(week, []); // tie for best, not perfect — no skin awarded
     }
