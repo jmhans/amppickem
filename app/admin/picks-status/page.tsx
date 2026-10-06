@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { auth0 } from '@/app/lib/auth0';
 import { isAdmin } from '@/app/lib/auth-utils';
-import { getOrCreateActiveSeason, getLatestStandingsWeek } from '@/app/lib/actions';
+import { getOrCreateActiveSeason, getBrowseDefaultWeek } from '@/app/lib/actions';
 import { lusitana } from '@/app/ui/fonts';
 import PicksStatusManager from './PicksStatusManager';
 
@@ -18,7 +18,7 @@ export default async function AdminPicksStatusPage({
 
   const season = await getOrCreateActiveSeason();
   const params = (await searchParams) ?? {};
-  const currentWeek = await getLatestStandingsWeek(season.id);
+  const currentWeek = await getBrowseDefaultWeek(season.id);
   const week = params.week ? Number(params.week) : currentWeek;
   const weeks = Array.from({ length: season.lastWeek - season.firstWeek + 1 }, (_, i) => season.firstWeek + i);
 

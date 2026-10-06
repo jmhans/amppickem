@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth0 } from '@/app/lib/auth0';
-import { getOrCreateActiveSeason, getLatestStandingsWeek } from '@/app/lib/actions';
+import { getOrCreateActiveSeason, getBrowseDefaultWeek } from '@/app/lib/actions';
 import BoardClientWrapper from './BoardClientWrapper';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +15,7 @@ export default async function BoardPage({
 
   const season = await getOrCreateActiveSeason();
   const resolvedSearchParams = (await searchParams) ?? {};
-  const week = resolvedSearchParams.week ? Number(resolvedSearchParams.week) : await getLatestStandingsWeek(season.id);
+  const week = resolvedSearchParams.week ? Number(resolvedSearchParams.week) : await getBrowseDefaultWeek(season.id);
   const weeks = Array.from({ length: season.lastWeek - season.firstWeek + 1 }, (_, i) => season.firstWeek + i);
 
   return (
