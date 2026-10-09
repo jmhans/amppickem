@@ -1,7 +1,7 @@
 import { redirect, notFound } from 'next/navigation';
 import { auth0 } from '@/app/lib/auth0';
 import { isAdmin } from '@/app/lib/auth-utils';
-import { getOrCreateActiveSeason, getLatestStandingsWeek, getRecapById } from '@/app/lib/actions';
+import { getOrCreateActiveSeason, getBrowseDefaultWeek, getRecapById } from '@/app/lib/actions';
 import { lusitana } from '@/app/ui/fonts';
 import RecapEditor from '../RecapEditor';
 
@@ -21,7 +21,7 @@ export default async function EditRecapPage({
   if (!recap) notFound();
 
   const season = await getOrCreateActiveSeason();
-  const defaultWeek = await getLatestStandingsWeek(season.id);
+  const defaultWeek = await getBrowseDefaultWeek(season.id);
   const weeks = Array.from({ length: season.lastWeek - season.firstWeek + 1 }, (_, i) => season.firstWeek + i);
 
   return (

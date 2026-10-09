@@ -11,7 +11,7 @@ import { isEffectiveAdmin, ADMIN_MODE_COOKIE } from '@/app/lib/admin-mode';
 import { gradePick, gradeSpreadPick, gradeTotalPick } from '@/app/lib/grading';
 import { isPickLocked } from '@/app/lib/pick-lock';
 import { syncWeekGames } from '@/app/lib/espn-api';
-import { computeLockThresholdFromEarliestGame } from '@/app/lib/lines-lock';
+import { computeLockThresholdFromEarliestGame, getZonedYMD } from '@/app/lib/lines-lock';
 import { FIRST_GAME_ROW, LAST_GAME_ROW } from '@/app/lib/template-layout';
 import { teamAbbrevFromFullName } from '@/app/lib/team-names';
 import { computeIncompletePicksForWeek } from '@/app/lib/picks-status';
@@ -651,6 +651,7 @@ export interface StandingsRawData {
   weekComplete: WeekCompleteMap;
   payoutConfig: PayoutConfig;
   currentWeek: number | null;
+  currentWeekEarliestGameTime: Date | null;
 }
 
 /** Shared raw fetch feeding both the Weekly and Season standings tabs — see app/lib/standings-calc.ts for the actual math. */
@@ -682,6 +683,7 @@ export async function getStandingsRawData(seasonId: number): Promise<StandingsRa
   const now = new Date();
   const weekComplete: WeekCompleteMap = {};
   let currentWeek: number | null = null;
+  let currentWeekEarliestGameTime: Date | null = null;
   for (let week = season.firstWeek; week <= season.lastWeek; week++) {
     const entry = gamesByWeek.get(week);
     weekComplete[week] = !!entry && entry.total > 0 && entry.final === entry.total;
@@ -692,7 +694,10 @@ export async function getStandingsRawData(seasonId: number): Promise<StandingsRa
         season.lineLockHour,
         season.lineLockTimezone,
       );
-      if (threshold <= now) currentWeek = week;
+      if (threshold <= now) {
+        currentWeek = week;
+        currentWeekEarliestGameTime = entry.earliestGameTime;
+      }
     }
   }
 
@@ -711,13 +716,28 @@ export async function getStandingsRawData(seasonId: number): Promise<StandingsRa
       tiers,
     },
     currentWeek,
+    currentWeekEarliestGameTime,
   };
 }
 
-/** The week the standings views should default to — the current pick cycle (see the lock-threshold comment above), falling back to the season's first week. */
+/** The week the pick cycle is currently on, falling back to the season's first week. */
 export async function getLatestStandingsWeek(seasonId: number): Promise<number> {
   const raw = await getStandingsRawData(seasonId);
   return raw.currentWeek ?? raw.season.firstWeek;
+}
+
+/** The week non-pick pages should default to: show the prior week until Friday or the first kickoff. */
+export async function getBrowseDefaultWeek(seasonId: number): Promise<number> {
+  const raw = await getStandingsRawData(seasonId);
+  const currentWeek = raw.currentWeek ?? raw.season.firstWeek;
+  if (currentWeek === raw.season.firstWeek) return currentWeek;
+
+  const now = new Date();
+  const { year, month, day } = getZonedYMD(now, raw.season.lineLockTimezone);
+  const isFriday = new Date(Date.UTC(year, month - 1, day)).getUTCDay() === 5;
+  const firstGameStarted = !!raw.currentWeekEarliestGameTime && raw.currentWeekEarliestGameTime <= now;
+
+  return isFriday || firstGameStarted ? currentWeek : currentWeek - 1;
 }
 
 export interface WeeklyStandingsDisplayRow extends WeeklyStandingsRow {

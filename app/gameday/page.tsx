@@ -1,16 +1,16 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { auth0 } from '@/app/lib/auth0';
-import { getParticipantsByAuth0Id, getOrCreateActiveSeason, getLatestStandingsWeek } from '@/app/lib/actions';
+import { getParticipantsByAuth0Id, getOrCreateActiveSeason, getBrowseDefaultWeek } from '@/app/lib/actions';
 import { lusitana } from '@/app/ui/fonts';
 import GameDayClient from './GameDayClient';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * A logged-in user's own picks for the current week + live scores, one screen, mobile-first —
+ * A logged-in user's own picks for the selected browse week + live scores, one screen, mobile-first —
  * for glancing at during games rather than the full editable picks board. Always the current
- * pick cycle (see getLatestStandingsWeek) — no week selector, deliberately, since this page is
+ * browse default (see getBrowseDefaultWeek) — no week selector, deliberately, since this page is
  * about "right now."  A user with multiple entries sees their first one, same convention
  * header.tsx's "My Picks" link already uses.
  */
@@ -38,7 +38,7 @@ export default async function GameDayPage() {
   }
 
   const season = await getOrCreateActiveSeason();
-  const week = await getLatestStandingsWeek(season.id);
+  const week = await getBrowseDefaultWeek(season.id);
 
   return (
     <main className="mx-auto max-w-md space-y-4">

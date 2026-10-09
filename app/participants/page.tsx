@@ -2,7 +2,7 @@ import { auth0 } from '@/app/lib/auth0';
 import {
   getParticipants,
   getOrCreateActiveSeason,
-  getLatestStandingsWeek,
+  getBrowseDefaultWeek,
   getWeeklyStandings,
   getSeasonStandings,
 } from '@/app/lib/actions';
@@ -17,7 +17,7 @@ export default async function ParticipantsPage() {
     getOrCreateActiveSeason(),
   ]);
 
-  const initialWeek = await getLatestStandingsWeek(season.id);
+  const initialWeek = await getBrowseDefaultWeek(season.id);
   const [weeklyRows, seasonRows] = await Promise.all([
     getWeeklyStandings(season.id, initialWeek),
     getSeasonStandings(season.id),
