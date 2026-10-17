@@ -1335,6 +1335,7 @@ export async function sendRecap(id: number) {
   const activeParticipants = await db
     .select({
       id: participants.id,
+      name: participants.name,
       email: participants.email,
       notificationsEnabled: participants.notificationsEnabled,
       notificationChannel: participants.notificationChannel,
@@ -1346,6 +1347,7 @@ export async function sendRecap(id: number) {
   let emailed = 0;
   let pushed = 0;
   let failed = 0;
+  const failedNames: string[] = [];
 
   // Best-effort per recipient — one participant's bad email address or a transient SMTP/push
   // failure must never take down the whole batch (Promise.all rejects on the FIRST rejected
@@ -1371,10 +1373,11 @@ export async function sendRecap(id: number) {
         }
       } catch (error) {
         failed++;
+        failedNames.push(p.name);
         console.error(`Failed to notify participant ${p.id} about recap ${id}:`, error);
       }
     }),
   );
 
-  return { success: true as const, emailed, pushed, failed };
+  return { success: true as const, emailed, pushed, failed, failedNames };
 }

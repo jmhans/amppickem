@@ -6,9 +6,14 @@ function getTransporter(): Transporter {
   const pass = process.env.GMAIL_APP_PASSWORD;
   if (!user || !pass) throw new Error('GMAIL_USER and GMAIL_APP_PASSWORD are not configured');
   if (!transporter) {
+    // Pooled: recap/reminder batches call sendMail ~40x concurrently, and without a pool
+    // each call opens its own SMTP connection — Gmail throttles concurrent connections per
+    // account and rejects the overflow, silently dropping some recipients.
     transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: { user, pass },
+      pool: true,
+      maxConnections: 3,
     });
   }
   return transporter;
