@@ -560,12 +560,24 @@ export async function getGameDayData(participantId: number, seasonId: number, we
  * computation this never triggers). Any logged-in user, not admin-gated — the writes here
  * only ever touch score/status/clock fields on games, and result on picks, that already exist.
  */
+const REFRESH_MIN_INTERVAL_MS = 30_000;
+
 export async function refreshCurrentWeekScores(seasonId: number, week: number) {
   const session = await auth0.getSession();
   if (!session?.user) return { success: false, error: 'Not logged in' };
 
   const [season] = await db.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1);
   if (!season) return { success: false, error: 'Season not found' };
+
+  // api/cron/sync-scores already syncs this week every minute during games — if it (or another
+  // click) just did, skip the ESPN round-trip rather than piling another burst onto it.
+  const [{ lastSyncedAt }] = await db
+    .select({ lastSyncedAt: sql<Date | null>`max(${games.updatedAt})` })
+    .from(games)
+    .where(and(eq(games.seasonId, season.id), eq(games.week, week)));
+  if (lastSyncedAt && Date.now() - new Date(lastSyncedAt).getTime() < REFRESH_MIN_INTERVAL_MS) {
+    return { success: true };
+  }
 
   try {
     await syncWeekGames(season.id, season.year, week);
