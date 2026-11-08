@@ -16,8 +16,8 @@ export const auth0 = new Auth0Client({
     // Defining this hook disables the SDK's default claim filtering, so session.user
     // arrives holding every ID token claim (iss, aud, iat, exp, sid, nonce, ...), which
     // bloats the session cookie. Re-apply the default filter and keep only the role claims.
-    const claims = session.user as Record<string, any>;
-    const user = filterDefaultIdTokenClaims(claims) as Record<string, any>;
+    const claims = session.user as Record<string, unknown>;
+    const user = filterDefaultIdTokenClaims(claims) as Record<string, unknown>;
 
     for (const namespace of ROLE_NAMESPACES) {
       const rolesKey = `${namespace}/roles`;
@@ -26,6 +26,15 @@ export const auth0 = new Auth0Client({
       }
     }
 
-    return { ...session, user: { ...user, sub: claims.sub } };
+    // The app never calls getAccessToken or any Auth0-protected API, so the access and
+    // refresh tokens are dead weight in the cookie. Keep only the ID token (used as
+    // id_token_hint on logout). Re-add them here if an API call ever needs them.
+    const { idToken, expiresAt } = session.tokenSet;
+
+    return {
+      ...session,
+      user: { ...user, sub: session.user.sub },
+      tokenSet: { accessToken: '', idToken, expiresAt },
+    };
   },
 });
