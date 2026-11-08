@@ -39,8 +39,14 @@ const ESPN_HEADERS = {
 // one. Heavier, but it's the one that actually works from where this runs.
 const CORE_API_BASE = 'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl';
 
+// Each sync chains ~5 requests per game across a whole week, so one hung ESPN request with no
+// timeout stalls the entire run until Vercel kills it (sync-scores' maxDuration is 30s). Cap
+// each request instead — per-game failures already degrade to a skipped game.
+const ESPN_FETCH_TIMEOUT_MS = 8000;
+const ESPN_GAME_CONCURRENCY = 4;
+
 async function fetchJson(url: string): Promise<any> {
-  const res = await fetch(url, { headers: ESPN_HEADERS });
+  const res = await fetch(url, { headers: ESPN_HEADERS, signal: AbortSignal.timeout(ESPN_FETCH_TIMEOUT_MS) });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`ESPN request failed: ${res.status} ${url} — ${body.slice(0, 200)}`);
@@ -142,7 +148,17 @@ export async function fetchWeekFromEspn(year: number, week: number): Promise<Esp
     getTeamAbbreviations(year),
   ]);
 
-  const results = await Promise.all(eventIds.map((id) => fetchGameFromCore(id, teamAbbrevs)));
+  // Bounded concurrency rather than every game at once — firing a whole week's ~80 chained
+  // requests in one burst every minute is what gets ESPN throttling us mid-game.
+  const results: (EspnGame | null)[] = new Array(eventIds.length).fill(null);
+  let next = 0;
+  const worker = async () => {
+    while (next < eventIds.length) {
+      const i = next++;
+      results[i] = await fetchGameFromCore(eventIds[i], teamAbbrevs);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(ESPN_GAME_CONCURRENCY, eventIds.length) }, worker));
   return results.filter((g): g is EspnGame => g !== null);
 }
 
